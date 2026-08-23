@@ -693,8 +693,19 @@ async def serve_video(request: Request, media_id: str):
 async def serve_original(request: Request, media_id: str):
     row = _row_or_404(media_id)
     _guard_visibility(request, row)
-    if not settings.allow_guest_download and not is_admin(request):
+    admin = is_admin(request)
+    if not settings.allow_guest_download and not admin:
         raise HTTPException(status_code=403, detail="Downloads are turned off")
+
+    if row["kind"] == "video" and not admin:
+        # A guest download of a video gets the same audio-free rendition the
+        # player uses. Otherwise turning on ALLOW_GUEST_DOWNLOAD later would
+        # quietly re-introduce sound through a side door.
+        silent = media.silent_path(row["id"])
+        if silent.exists():
+            return _serve(silent, "video/mp4",
+                          filename=(row["original_name"] or row["stored_name"]))
+
     path = settings.originals_dir / row["stored_name"]
     mime = row["mime"] or mimetypes.guess_type(row["stored_name"])[0] or "application/octet-stream"
     return _serve(path, mime, filename=row["original_name"] or row["stored_name"])
@@ -973,6 +984,8 @@ async def admin_action(request: Request):
                 (settings.thumbs_dir / r["thumb_name"]).unlink(missing_ok=True)
             if r["display_name"]:
                 (settings.display_dir / r["display_name"]).unlink(missing_ok=True)
+            # The audio-stripped playback copy is a derivative too.
+            media.silent_path(r["id"]).unlink(missing_ok=True)
         db.execute(f"DELETE FROM media WHERE id IN ({placeholders})", ids)
         return {"ok": True, "deleted": len(rows)}
 
