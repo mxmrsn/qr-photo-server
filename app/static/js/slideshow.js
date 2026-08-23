@@ -145,10 +145,8 @@
   }
 
   function paintCaption(item) {
-    var who = [
-      item.guest_name,
-      item.table_id ? 'Table ' + item.table_id : ''
-    ].filter(Boolean).join('  ·  ');
+    var who = [item.guest_name, tableLabel(item.table_id)]
+      .filter(Boolean).join('  ·  ');
 
     var html = '';
     if (item.message) html += '<p class="msg">&ldquo;' + escapeHtml(item.message) + '&rdquo;</p>';
@@ -160,10 +158,15 @@
   function announce(item) {
     var name = item.guest_name || 'Someone';
     arrivalEl.textContent = 'Just added by ' + name +
-      (item.table_id ? ' · Table ' + item.table_id : '');
+      (item.table_id ? ' · ' + tableLabel(item.table_id) : '');
     arrivalEl.classList.add('show');
     setTimeout(function () { arrivalEl.classList.remove('show'); }, 5200);
     item.fresh = false;
+  }
+
+  function tableLabel(id) {
+    if (!id) return '';
+    return /^\d+$/.test(String(id)) ? 'Table ' + id : String(id);
   }
 
   function escapeHtml(str) {

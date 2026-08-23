@@ -69,7 +69,7 @@
 
     var who = esc(item.guest_name || 'Anonymous');
     var meta = [
-      item.table_id ? 'Table ' + esc(item.table_id) : '',
+      esc(tableLabel(item.table_id)),
       humanBytes(item.bytes),
       timeAgo(item.uploaded_at)
     ].filter(Boolean).join(' · ');
@@ -157,7 +157,7 @@
     getJSON('/api/admin/notes').then(function (data) {
       if (!data.items.length) { notesEl.innerHTML = '<p style="opacity:.5">No notes yet.</p>'; return; }
       notesEl.innerHTML = data.items.map(function (n) {
-        var who = [n.guest_name, n.table_id ? 'Table ' + n.table_id : '']
+        var who = [n.guest_name, tableLabel(n.table_id)]
           .filter(Boolean).join(' · ') || 'Anonymous';
         return '<div class="note"' + (n.hidden ? ' style="opacity:.45"' : '') + '>' +
           '<p>' + esc(n.message) + '</p>' +

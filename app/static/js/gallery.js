@@ -44,7 +44,7 @@
     if (item.guest_name || item.table_id) {
       var by = document.createElement('div');
       by.className = 'by';
-      by.textContent = [item.guest_name, item.table_id ? 'Table ' + item.table_id : '']
+      by.textContent = [item.guest_name, tableLabel(item.table_id)]
         .filter(Boolean).join(' · ');
       button.appendChild(by);
     }
@@ -120,7 +120,7 @@
     getJSON('/api/notes?limit=8').then(function (data) {
       if (!data.items.length) return;
       notesEl.innerHTML = data.items.map(function (n) {
-        var who = [n.guest_name, n.table_id ? 'Table ' + n.table_id : '']
+        var who = [n.guest_name, tableLabel(n.table_id)]
           .filter(Boolean).join(' · ') || 'Anonymous';
         return '<div class="note"><p>' + esc(n.message) + '</p>' +
                '<div class="who">— ' + esc(who) + '</div></div>';
@@ -155,7 +155,7 @@
       lbStage.appendChild(img);
     }
 
-    var who = [item.guest_name, item.table_id ? 'Table ' + item.table_id : '']
+    var who = [item.guest_name, tableLabel(item.table_id)]
       .filter(Boolean).join(' · ');
     var caption = [item.message, who].filter(Boolean).join(' — ');
     if (cfg.allowDownload) {

@@ -36,6 +36,12 @@
     return Math.floor(s / 86400) + ' days ago';
   };
 
+  // "3" reads better as "Table 3"; "Patio" should stay "Patio".
+  window.tableLabel = function (id) {
+    if (!id) return '';
+    return /^\d+$/.test(String(id)) ? 'Table ' + id : String(id);
+  };
+
   window.getJSON = function (url) {
     return fetch(url, { credentials: 'same-origin' }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);

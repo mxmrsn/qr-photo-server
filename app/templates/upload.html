@@ -6,7 +6,7 @@
 
 <main class="wrap">
   {% if table_id %}
-    <div style="text-align:center"><span class="table-chip">Table {{ table_id }}</span></div>
+    <div style="text-align:center"><span class="table-chip">{{ ("Table " ~ table_id) if table_id.isdigit() else table_id }}</span></div>
   {% endif %}
 
   <p class="lede" style="text-align:center;margin:14px auto 26px;max-width:30em;opacity:.78;line-height:1.6">

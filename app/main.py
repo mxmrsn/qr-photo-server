@@ -913,6 +913,38 @@ async def admin_ingest(
     return {"ok": True, "id": media_id, "duplicate": False}
 
 
+@app.post("/api/admin/ingest-note")
+async def admin_ingest_note(
+    request: Request,
+    note_id: str = Form(...),
+    guest_name: str = Form(""),
+    message: str = Form(...),
+    table_id: str = Form(""),
+    created_at: float = Form(0.0),
+):
+    """Carry a guestbook note across during a sync. Idempotent on note_id."""
+    require_sync_auth(request)
+    existing = db.query_one("SELECT id FROM guestbook WHERE id = ?", (note_id,))
+    if existing:
+        return {"ok": True, "duplicate": True}
+    db.execute(
+        """
+        INSERT INTO guestbook (id, guest_name, message, table_id, created_at, approved)
+        VALUES (?,?,?,?,?,1)
+        """,
+        (note_id, guest_name.strip()[:80] or None, message.strip()[:1000],
+         table_id.strip()[:40] or None, created_at or time.time()),
+    )
+    return {"ok": True, "duplicate": False}
+
+
+@app.get("/api/admin/note-inventory")
+async def admin_note_inventory(request: Request):
+    require_sync_auth(request)
+    rows = db.query("SELECT id, guest_name, message, table_id, created_at FROM guestbook")
+    return {"items": [dict(r) for r in rows]}
+
+
 @app.get("/api/admin/inventory")
 async def admin_inventory(request: Request):
     """Everything this instance holds, for a sync client to diff against."""
