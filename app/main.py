@@ -228,14 +228,13 @@ async def _shutdown() -> None:
 
 def page(request: Request, template: str, **extra):
     ctx = {
-        "request": request,
         "s": settings,
         "theme": settings.theme(),
         "is_admin": is_admin(request),
         "ffmpeg": media.has_ffmpeg(),
     }
     ctx.update(extra)
-    return templates.TemplateResponse(template, ctx)
+    return templates.TemplateResponse(request, template, ctx)
 
 
 # --------------------------------------------------------------------------
@@ -750,8 +749,32 @@ async def admin_export(request: Request, what: str = "originals"):
     rows = db.query("SELECT * FROM media WHERE status='ready' ORDER BY seq ASC")
 
     def generate():
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED, allowZip64=True) as zf:
+        # ZipFile patches local headers by seeking backwards when it can, which
+        # is impossible while streaming. Handing it a tell()-only stream makes
+        # it emit data descriptors instead, producing a valid streaming zip.
+        class Sink:
+            def __init__(self):
+                self.buf = bytearray()
+                self.pos = 0
+
+            def write(self, data):
+                self.buf.extend(data)
+                self.pos += len(data)
+                return len(data)
+
+            def tell(self):
+                return self.pos
+
+            def flush(self):
+                pass
+
+            def drain(self) -> bytes:
+                out = bytes(self.buf)
+                self.buf.clear()
+                return out
+
+        sink = Sink()
+        with zipfile.ZipFile(sink, "w", zipfile.ZIP_STORED, allowZip64=True) as zf:
             manifest = ["filename,guest,table,kind,uploaded_at,original_name"]
             for r in rows:
                 src = (settings.originals_dir / r["stored_name"]) if what == "originals" \
@@ -774,11 +797,11 @@ async def admin_export(request: Request, what: str = "originals"):
                         if not chunk:
                             break
                         entry.write(chunk)
-                        yield buffer.getvalue()
-                        buffer.seek(0)
-                        buffer.truncate(0)
+                        if len(sink.buf) >= CHUNK:
+                            yield sink.drain()
+                yield sink.drain()
             zf.writestr("manifest.csv", "\n".join(manifest))
-        yield buffer.getvalue()
+        yield sink.drain()
 
     stamp = time.strftime("%Y%m%d-%H%M")
     name = f"wedding-{what}-{stamp}.zip"

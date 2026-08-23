@@ -64,6 +64,8 @@
     holding.style.display = 'none';
 
     var back = layers[1 - front];
+    var stale = back.querySelector('video');
+    if (stale) { stale.pause(); stale.removeAttribute('src'); stale.load(); }
     back.innerHTML = '';
 
     if (item.kind === 'video') {
@@ -120,10 +122,21 @@
 
     video.addEventListener('ended', go);
     video.addEventListener('error', go);
-    video.play().catch(function () { /* poster still shows */ });
 
-    // Cap long clips so one guest's five-minute video doesn't hold the screen.
-    schedule(Math.min(MAX_VIDEO, DWELL * 4), go);
+    // Budget: the clip's own length plus a beat, capped so one guest's
+    // five-minute video can't hold the screen hostage.
+    var budget = item.duration
+      ? Math.min(MAX_VIDEO, item.duration * 1000 + 1200)
+      : Math.min(MAX_VIDEO, DWELL * 2);
+
+    video.play().catch(function () {
+      // Autoplay refused. The poster frame is still up, so treat it as a
+      // still photo rather than staring at it for the whole clip length.
+      budget = DWELL;
+      schedule(budget, go);
+    });
+
+    schedule(budget, go);
   }
 
   function preloadNext() {

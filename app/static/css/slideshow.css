@@ -50,7 +50,8 @@ body.show-cursor { cursor: default; }
 
 .caption {
   position: fixed; left: 0; right: 0; bottom: 0;
-  padding: 130px 5vw 4.2vh;
+  /* Right padding keeps the text clear of the QR card in the corner. */
+  padding: 130px max(5vw, 300px) 4.2vh 5vw;
   background: linear-gradient(transparent, rgba(0,0,0,.78));
   pointer-events: none;
   transition: opacity .5s;
@@ -122,3 +123,11 @@ body.show-cursor { cursor: default; }
   opacity: 0; transition: opacity .3s; pointer-events: none;
 }
 body.show-cursor .help { opacity: .45; }
+
+/* Portrait or very narrow displays can't fit the caption and the QR card side
+   by side. The caption matters more, so the card steps aside. */
+@media (max-aspect-ratio: 1/1), (max-width: 720px) {
+  .promo { right: 50%; transform: translateX(50%); bottom: auto; top: 3vh; padding: 9px 15px 9px 9px; }
+  .promo img { width: 52px; }
+  .caption { padding-right: 5vw; }
+}
