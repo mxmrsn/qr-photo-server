@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import qrcode
-from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 from qrcode.constants import ERROR_CORRECT_H, ERROR_CORRECT_Q
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
@@ -83,7 +83,12 @@ def monochrome_logo(path: Path) -> Image.Image:
 TONES = {
     "dark_logo": 16,      # near-black, drawn fat enough to touch its neighbours
     "dark_plain": 64,     # grey, well below the binarisation midpoint
-    "light_logo": 208,    # pale grey where there would otherwise be paper
+    "light_logo": 176,    # grey where there would otherwise be paper. Darker
+                          # than it needs to be for scanning, because this is
+                          # what fills the gaps between the black dots and
+                          # makes the mark read as continuous strokes.
+                          # Measured: 166 still scans clean but slips under
+                          # heavy ink spread, so 176 is the honest floor.
     "light_plain": 255,   # paper
 }
 RADII = {
@@ -255,9 +260,14 @@ def scans_reliably(img: Image.Image, expected: str) -> bool | None:
     card taken across a dim room with an unsteady hand.
 
     Those numbers are calibrated, not guessed: they were tuned until this check
-    agreed with a separate test that renders whole cards, warps them in
-    perspective and decodes the result. Loosen them and the tool will happily
-    approve codes that fail on the night.
+    agreed with a separate harness that renders whole cards, warps them in
+    perspective, simulates ink spread and decodes the result. Loosen them and
+    the tool will happily approve codes that fail on the night.
+
+    Deliberately free of random noise. An earlier version blended in
+    Image.effect_noise, which is unseeded — so the same input could verify on
+    one run and not the next, and the tool would quietly emit a different card
+    each time. A reproducible check is worth more here than a realistic one.
     """
     try:
         import zxingcpp  # noqa: F401
@@ -269,7 +279,6 @@ def scans_reliably(img: Image.Image, expected: str) -> bool | None:
     dim = img.resize((500, 500), Image.LANCZOS).filter(ImageFilter.GaussianBlur(2.6))
     dim = ImageEnhance.Contrast(dim).enhance(0.58)
     dim = ImageEnhance.Brightness(dim).enhance(0.70)
-    dim = ImageChops.blend(dim, Image.effect_noise((500, 500), 16).convert("RGB"), 0.16)
 
     return all(decode(v) == expected for v in (img, soft, dim))
 

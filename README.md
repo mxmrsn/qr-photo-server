@@ -69,7 +69,7 @@ carried by *which shade and size* each dot gets:
 | | inside the mark | outside it |
 | --- | --- | --- |
 | **dark module** | near-black, fat dots that join into strokes | small grey dots |
-| **light module** | pale grey dot, filling gaps in the strokes | paper |
+| **light module** | grey dot, filling gaps in the strokes | paper |
 
 A scanner samples the middle of each module and only cares which side of the
 light/dark threshold it lands on, so the mark costs nothing from the error
@@ -101,9 +101,10 @@ square and a dark mark on a light one both come out as clean black artwork.
 > ```
 >
 > Those thresholds are calibrated against a separate harness that renders whole
-> cards, warps them in perspective and decodes the result — not guessed. This
-> needs `zxing-cpp` (in `requirements.txt`); without it the tool says
-> `unverified` rather than pretending.
+> cards, warps them in perspective, simulates ink spread on paper and decodes
+> the result — not guessed. The check is deterministic, so the same inputs
+> always produce the same card. This needs `zxing-cpp` (in `requirements.txt`);
+> without it the tool says `unverified` rather than pretending.
 
 If you'd rather know which table a photo came from, you can still print
 per-table codes with `--tables 1-18`, and the table name shows up on the upload
