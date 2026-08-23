@@ -206,9 +206,10 @@ def render_card(
         y += int(H * 0.004)
         d.text((text_x, y), args.wifi_ssid, font=f_ssid, fill=accent)
         y += line_height(f_ssid)
-        if args.wifi_password:
-            d.text((text_x, y), f"password  {args.wifi_password}", font=f_pass, fill=ink)
-            y += line_height(f_pass)
+        pass_line = (f"password  {args.wifi_password}" if args.wifi_password
+                     else "no password needed")
+        d.text((text_x, y), pass_line, font=f_pass, fill=ink)
+        y += line_height(f_pass)
 
         if wifi_qr:
             wifi_img = render_qr(wifi_payload(args.wifi_ssid, args.wifi_password),

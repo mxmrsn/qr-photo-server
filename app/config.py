@@ -112,6 +112,11 @@ class Settings:
     # it off hides the roster from anyone holding the URL; guests then type
     # their name as free text and lose the automatic table.
     guest_list_public = _bool("GUEST_LIST_PUBLIC", True)
+
+    # Answer the OS "is there internet here?" probes so phones joining the
+    # wifi pop the upload page open by themselves. Only meaningful when this
+    # machine is also the network's DNS — see docs/NETWORK.md.
+    captive_portal = _bool("CAPTIVE_PORTAL", False)
     allow_guest_download = _bool("ALLOW_GUEST_DOWNLOAD", False)
     slideshow_seconds = _int("SLIDESHOW_SECONDS", 7)
 

@@ -381,6 +381,90 @@ yours in the week before, not three months ahead.
 
 ---
 
+## Making the page open by itself
+
+One QR code cannot both join a network and open a web page — a QR carries a
+single payload, and no format both iOS and Android honour does both. (An iOS
+configuration profile can, but Android ignores it and iPhones have to walk
+through Settings to install one. Not worth it.)
+
+There is a better answer than a second code: **a captive portal**. Joining the
+wifi makes the page appear on its own, with no second scan at all.
+
+### How phones decide a network needs a sign-in
+
+On joining, every phone quietly fetches a known URL and checks the reply:
+
+| OS | Probe | Expects |
+| --- | --- | --- |
+| iOS, macOS | `captive.apple.com/hotspot-detect.html` | the word `Success` |
+| Android | `connectivitycheck.gstatic.com/generate_204` | HTTP 204 |
+| Windows | `www.msftconnecttest.com/connecttest.txt` | `Microsoft Connect Test` |
+
+Reply with anything else and the OS decides it is behind a sign-in page — and
+opens that page immediately, unprompted. The server already answers all of
+these; set `CAPTIVE_PORTAL=true` to make it serve the splash instead of the
+expected reply.
+
+**With it off, the probes are answered honestly**, so the server can never make
+a working network look broken by accident.
+
+### What it needs
+
+The phone has to resolve those hostnames to *this machine*, which means being
+the network's DNS server:
+
+1. Run a resolver that answers everything with the MacBook's address:
+
+   ```bash
+   brew install dnsmasq
+   # /opt/homebrew/etc/dnsmasq.conf
+   address=/#/192.168.1.154      # every name resolves here
+   ```
+
+   ```bash
+   sudo brew services start dnsmasq
+   ```
+
+2. On your router, hand out the MacBook as the DNS server over DHCP. Most
+   routers expose this as "DNS server" in the DHCP or LAN settings.
+
+3. Serve on **port 80** — the probes do not use any other port:
+
+   ```bash
+   sudo .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 80
+   ```
+
+4. Set `CAPTIVE_PORTAL=true`.
+
+### The catch, and why the splash is a signpost
+
+iOS opens captive portals in a stripped-down browser (the Captive Network
+Assistant) that **does not reliably support file pickers**. Putting the upload
+page there directly would give guests a button that does nothing.
+
+So the splash is deliberately not the upload page. It confirms they are
+connected and points them at the address to open in their real browser. The
+printed card still carries the QR for exactly that, and now it is the only
+thing left to do.
+
+### Open network, no password
+
+Dropping the password removes a step and shortens the card, and `make_qr.py`
+prints "no password needed" so nobody hunts for one:
+
+```bash
+tools/make_qr.py --wifi-ssid "MaxRachel" --copies 18 --layout sheet
+```
+
+Anyone in range can join, which for a private event behind a door is a fair
+trade. They reach an upload page and nothing else; there is no path from there
+to the rest of your network, and anything unwelcome can be removed in `/admin`.
+If the venue is somewhere with public footfall, set `MODERATION=slideshow` so
+nothing reaches the projector unapproved.
+
+---
+
 ## Plan 5: the hedge
 
 If cell service is *marginal*, do both:

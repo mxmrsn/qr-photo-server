@@ -19,7 +19,7 @@ import zipfile
 from collections import defaultdict, deque
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -713,6 +713,92 @@ async def serve_original(request: Request, media_id: str):
     path = settings.originals_dir / row["stored_name"]
     mime = row["mime"] or mimetypes.guess_type(row["stored_name"])[0] or "application/octet-stream"
     return _serve(path, mime, filename=row["original_name"] or row["stored_name"])
+
+
+# --------------------------------------------------------------------------
+# Captive portal
+#
+# Phones decide whether a network "has internet" by fetching a known URL and
+# checking the reply. Answer those probes with something unexpected and the OS
+# concludes it is behind a sign-in page, then opens that page on its own — no
+# scanning, no typing. Joining the wifi becomes the only thing a guest does.
+#
+# This only works when the phone's DNS resolves those hostnames to us, which
+# means this machine has to be the network's DNS server. docs/NETWORK.md has
+# the setup.
+# --------------------------------------------------------------------------
+
+CAPTIVE_PATHS = [
+    "/hotspot-detect.html",       # iOS, macOS
+    "/library/test/success.html",  # older iOS
+    "/generate_204",              # Android
+    "/gen_204",                   # Android
+    "/ncsi.txt",                  # Windows
+    "/connecttest.txt",           # Windows
+    "/canonical.html",            # Firefox, Ubuntu
+    "/success.txt",               # Firefox
+]
+
+
+def _captive_splash(request: Request) -> HTMLResponse:
+    """What the phone's sign-in window shows.
+
+    Deliberately not the upload page. iOS opens these in a stripped-down
+    browser that does not reliably support file pickers, so sending a guest
+    there to upload is a trap — they would tap the button and nothing would
+    happen. Instead this is a signpost into their real browser.
+    """
+    target = settings.base_url.rstrip("/") + "/"
+    pretty = target.replace("https://", "").replace("http://", "").rstrip("/")
+    theme = settings.theme()
+    return HTMLResponse(
+        f"""<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{settings.couple_names}</title>
+<style>
+ body {{ margin:0; min-height:100vh; display:grid; place-items:center; text-align:center;
+        background:{theme['paper']}; color:{theme['ink']};
+        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; padding:28px; }}
+ h1 {{ font-family:"Iowan Old Style",Palatino,Georgia,serif; font-weight:400;
+      font-size:clamp(30px,9vw,46px); margin:0 0 10px; }}
+ p {{ font-size:17px; line-height:1.6; opacity:.8; max-width:22em; margin:0 auto 22px; }}
+ a.go {{ display:block; background:{theme['accent']}; color:#fff; text-decoration:none;
+        font-size:18px; font-weight:600; padding:17px 26px; border-radius:13px;
+        max-width:20em; margin:0 auto; }}
+ .url {{ margin-top:20px; font-size:15px; opacity:.55; }}
+</style></head><body><div>
+ <h1>{settings.couple_names}</h1>
+ <p>You're connected. Open your browser and go to the address below to add your
+    photos and videos.</p>
+ <a class="go" href="{target}">Open the photo album</a>
+ <div class="url">{pretty}</div>
+</div></body></html>""",
+        status_code=200,
+    )
+
+
+@app.get("/hotspot-detect.html")
+@app.get("/library/test/success.html")
+@app.get("/generate_204")
+@app.get("/gen_204")
+@app.get("/ncsi.txt")
+@app.get("/connecttest.txt")
+@app.get("/canonical.html")
+@app.get("/success.txt")
+async def captive_probe(request: Request):
+    if not settings.captive_portal:
+        # Behave like the real thing so we never accidentally make a phone
+        # think a working network is broken.
+        path = request.url.path
+        if path in ("/generate_204", "/gen_204"):
+            return Response(status_code=204)
+        if path == "/ncsi.txt":
+            return Response("Microsoft NCSI", media_type="text/plain")
+        if path == "/success.txt":
+            return Response("success\n", media_type="text/plain")
+        return HTMLResponse("<HTML><HEAD><TITLE>Success</TITLE></HEAD>"
+                            "<BODY>Success</BODY></HTML>")
+    return _captive_splash(request)
 
 
 # --------------------------------------------------------------------------
