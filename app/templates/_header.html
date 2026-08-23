@@ -1,0 +1,6 @@
+<header class="masthead">
+  <span class="flourish"></span>
+  <h1>{{ s.couple_names }}</h1>
+  {% if s.event_date %}<p class="date">{{ s.event_date }}</p>{% endif %}
+  {% block lede %}{% endblock %}
+</header>

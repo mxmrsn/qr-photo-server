@@ -48,15 +48,24 @@ def _bool(key: str, default: bool) -> bool:
 
 class Settings:
     # --- The event ------------------------------------------------------
-    couple_names = _str("COUPLE_NAMES", "Max & Alex")
+    couple_names = _str("COUPLE_NAMES", "Max & Rachel")
     event_date = _str("EVENT_DATE", "")            # free text, e.g. "September 14, 2026"
-    event_hashtag = _str("EVENT_HASHTAG", "")      # optional, e.g. "#MaxAndAlex"
+    event_hashtag = _str("EVENT_HASHTAG", "")      # optional, e.g. "#MaxAndRachel"
     welcome_message = _str(
         "WELCOME_MESSAGE",
         "Help us see today through your eyes. Every photo and video you add "
         "lands straight in our album.",
     )
     thanks_message = _str("THANKS_MESSAGE", "Thank you — we can't wait to see these.")
+
+    # Flip this on after the wedding: the copy changes from "today" to
+    # "the wedding", and the page nudges people to go through their camera roll.
+    post_event = _bool("POST_EVENT", False)
+    post_event_message = _str(
+        "POST_EVENT_MESSAGE",
+        "Still got photos on your phone from the big day? We'd love to have them. "
+        "Scroll back through your camera roll — nothing is too small.",
+    )
 
     # --- Look and feel --------------------------------------------------
     accent = _str("ACCENT", "#8a6f4e")             # warm gold

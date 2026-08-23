@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="{{ theme.paper }}">
+<title>{% block title %}{{ s.couple_names }}{% endblock %}</title>
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  :root {
+    --accent: {{ theme.accent }};
+    --accent-soft: {{ theme.accent_soft }};
+    --ink: {{ theme.ink }};
+    --paper: {{ theme.paper }};
+  }
+</style>
+{% block head %}{% endblock %}
+</head>
+<body>
+{% block body %}{% endblock %}
+<div class="toast" id="toast"></div>
+<script src="/static/js/common.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

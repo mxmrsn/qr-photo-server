@@ -40,7 +40,9 @@ CREATE TABLE IF NOT EXISTS media (
     thumb_name    TEXT,
     display_name  TEXT,
     uploader_ip   TEXT,
-    error         TEXT
+    error         TEXT,
+    sha256        TEXT,                       -- dedupe key, also survives sync
+    source        TEXT NOT NULL DEFAULT 'venue'  -- 'venue' | 'post' | 'import'
 );
 CREATE INDEX IF NOT EXISTS idx_media_uploaded ON media(uploaded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_media_visible  ON media(hidden, approved, status);
@@ -78,7 +80,23 @@ def connect() -> sqlite3.Connection:
 def init_db() -> None:
     conn = connect()
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Additive migrations, so an existing data/ directory keeps working."""
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(media)")}
+    for column, ddl in (
+        ("sha256", "ALTER TABLE media ADD COLUMN sha256 TEXT"),
+        ("source", "ALTER TABLE media ADD COLUMN source TEXT NOT NULL DEFAULT 'venue'"),
+    ):
+        if column not in have:
+            conn.execute(ddl)
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_media_sha "
+        "ON media(sha256) WHERE sha256 IS NOT NULL"
+    )
 
 
 def query(sql: str, params: Iterable[Any] = ()) -> list[sqlite3.Row]:

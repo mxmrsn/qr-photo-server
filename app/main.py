@@ -301,6 +301,7 @@ async def api_upload(
     dest = settings.originals_dir / stored_name
 
     written = 0
+    hasher = hashlib.sha256()
     try:
         with dest.open("wb") as out:
             while True:
@@ -313,6 +314,7 @@ async def api_upload(
                         status_code=413,
                         detail=f"That file is over the {settings.max_file_mb} MB limit.",
                     )
+                hasher.update(chunk)
                 out.write(chunk)
     except HTTPException:
         dest.unlink(missing_ok=True)
@@ -327,22 +329,53 @@ async def api_upload(
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="That file came through empty.")
 
+    digest = hasher.hexdigest()
+
+    # Same bytes already here? Someone double-tapped, or is re-uploading their
+    # camera roll after the wedding. Keep the first copy and its attribution.
+    existing = db.query_one("SELECT id FROM media WHERE sha256 = ?", (digest,))
+    if existing:
+        dest.unlink(missing_ok=True)
+        return {"ok": True, "id": existing["id"], "kind": kind,
+                "bytes": written, "duplicate": True}
+
     db.execute(
         """
         INSERT INTO media (id, stored_name, original_name, kind, mime, bytes,
                            guest_name, message, table_id, uploaded_at, status,
-                           approved, uploader_ip)
-        VALUES (?,?,?,?,?,?,?,?,?,?,'processing',1,?)
+                           approved, uploader_ip, sha256, source)
+        VALUES (?,?,?,?,?,?,?,?,?,?,'processing',1,?,?,?)
         """,
         (
             media_id, stored_name, media.clean_display_name(file.filename), kind,
             (file.content_type or "")[:100], written,
             guest_name.strip()[:80] or None, message.strip()[:500] or None,
-            table_id.strip()[:40] or None, time.time(), ip,
+            table_id.strip()[:40] or None, time.time(), ip, digest,
+            "post" if settings.post_event else "venue",
         ),
     )
     await enqueue(media_id)
     return {"ok": True, "id": media_id, "kind": kind, "bytes": written}
+
+
+@app.post("/api/name")
+async def api_name(request: Request):
+    """Attach a name to items a guest already sent, if they typed it late."""
+    body = await request.json()
+    ids = [str(i) for i in (body.get("ids") or [])][:200]
+    name = str(body.get("guest_name") or "").strip()[:80]
+    if not ids or not name:
+        raise HTTPException(status_code=400, detail="Need ids and a name")
+    ip = client_ip(request)
+    placeholders = ",".join("?" for _ in ids)
+    # Only let a device rename what it uploaded itself.
+    db.execute(
+        f"UPDATE media SET guest_name = ? "
+        f"WHERE id IN ({placeholders}) AND uploader_ip = ? "
+        f"AND (guest_name IS NULL OR guest_name = '')",
+        (name, *ids, ip),
+    )
+    return {"ok": True}
 
 
 @app.post("/api/note")
@@ -717,6 +750,119 @@ async def admin_export(request: Request, what: str = "originals"):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{name}"'},
     )
+
+
+# --------------------------------------------------------------------------
+# Sync: pushing a venue instance up to the permanent cloud instance
+# --------------------------------------------------------------------------
+
+def require_sync_auth(request: Request) -> None:
+    """Admin cookie, or a bearer token equal to the admin password."""
+    if is_admin(request):
+        return
+    header = request.headers.get("authorization", "")
+    if header.lower().startswith("bearer "):
+        token = header[7:].strip()
+        if ADMIN_PASSWORD and hmac.compare_digest(token, ADMIN_PASSWORD):
+            return
+    raise HTTPException(status_code=401, detail="Sync token required")
+
+
+@app.post("/api/admin/have")
+async def admin_have(request: Request):
+    """Which of these content hashes does this instance already hold?"""
+    require_sync_auth(request)
+    body = await request.json()
+    hashes = [str(h) for h in (body.get("sha256") or [])][:1000]
+    if not hashes:
+        return {"have": []}
+    placeholders = ",".join("?" for _ in hashes)
+    rows = db.query(
+        f"SELECT sha256 FROM media WHERE sha256 IN ({placeholders})", hashes
+    )
+    return {"have": [r["sha256"] for r in rows]}
+
+
+@app.post("/api/admin/ingest")
+async def admin_ingest(
+    request: Request,
+    file: UploadFile,
+    sha256: str = Form(""),
+    guest_name: str = Form(""),
+    message: str = Form(""),
+    table_id: str = Form(""),
+    original_name: str = Form(""),
+    uploaded_at: float = Form(0.0),
+    source: str = Form("import"),
+):
+    """Accept an item from another instance, preserving its original metadata.
+
+    Idempotent: re-running a sync that half-finished is safe.
+    """
+    require_sync_auth(request)
+
+    ext = media.safe_extension(original_name or file.filename, file.content_type)
+    kind = media.classify(ext, file.content_type)
+    if kind is None:
+        raise HTTPException(status_code=415, detail="Unsupported file type")
+    if not ext:
+        ext = ".jpg" if kind == "image" else ".mp4"
+
+    media_id = uuid.uuid4().hex
+    dest = settings.originals_dir / f"{media_id}{ext}"
+    hasher = hashlib.sha256()
+    written = 0
+    try:
+        with dest.open("wb") as out:
+            while True:
+                chunk = await file.read(CHUNK)
+                if not chunk:
+                    break
+                written += len(chunk)
+                hasher.update(chunk)
+                out.write(chunk)
+    finally:
+        await file.close()
+
+    digest = hasher.hexdigest()
+    if sha256 and not hmac.compare_digest(sha256, digest):
+        dest.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Checksum mismatch — transfer corrupted")
+
+    existing = db.query_one("SELECT id FROM media WHERE sha256 = ?", (digest,))
+    if existing:
+        dest.unlink(missing_ok=True)
+        return {"ok": True, "id": existing["id"], "duplicate": True}
+
+    db.execute(
+        """
+        INSERT INTO media (id, stored_name, original_name, kind, mime, bytes,
+                           guest_name, message, table_id, uploaded_at, status,
+                           approved, sha256, source)
+        VALUES (?,?,?,?,?,?,?,?,?,?,'processing',1,?,?)
+        """,
+        (
+            media_id, dest.name, media.clean_display_name(original_name or file.filename),
+            kind, (file.content_type or "")[:100], written,
+            guest_name.strip()[:80] or None, message.strip()[:500] or None,
+            table_id.strip()[:40] or None, uploaded_at or time.time(),
+            digest, (source or "import")[:16],
+        ),
+    )
+    await enqueue(media_id)
+    return {"ok": True, "id": media_id, "duplicate": False}
+
+
+@app.get("/api/admin/inventory")
+async def admin_inventory(request: Request):
+    """Everything this instance holds, for a sync client to diff against."""
+    require_sync_auth(request)
+    rows = db.query(
+        "SELECT id, sha256, stored_name, original_name, guest_name, message, "
+        "table_id, uploaded_at, kind, bytes, source FROM media "
+        "WHERE sha256 IS NOT NULL ORDER BY seq ASC"
+    )
+    return {"items": [dict(r) for r in rows], "count": len(rows)}
 
 
 @app.exception_handler(HTTPException)

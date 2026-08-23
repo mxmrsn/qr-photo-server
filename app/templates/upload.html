@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Share your photos — {{ s.couple_names }}{% endblock %}
+
+{% block body %}
+{% include "_header.html" %}
+
+<main class="wrap">
+  {% if table_id %}
+    <div style="text-align:center"><span class="table-chip">Table {{ table_id }}</span></div>
+  {% endif %}
+
+  <p class="lede" style="text-align:center;margin:14px auto 26px;max-width:30em;opacity:.78;line-height:1.6">
+    {{ s.welcome_message }}
+  </p>
+
+  <div class="card">
+    <label class="field">
+      <span>Your name</span>
+      <input type="text" id="guestName" placeholder="So we know who to thank"
+             autocomplete="name" enterkeyhint="done">
+    </label>
+
+    <div class="btn-row">
+      <button class="btn" id="pickBtn">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+        </svg>
+        Photos &amp; videos
+      </button>
+      <button class="btn ghost hidden" id="cameraBtn">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>
+        </svg>
+        Take a photo
+      </button>
+    </div>
+
+    <input type="file" id="filePick" class="hidden" multiple accept="image/*,video/*">
+    <input type="file" id="fileCam"  class="hidden" accept="image/*" capture="environment">
+
+    <p style="font-size:12.5px;opacity:.5;text-align:center;margin:13px 0 0;line-height:1.5">
+      Up to {{ s.max_files_per_batch }} at a time · {{ s.max_file_mb }} MB each
+      {%- if not ffmpeg %} · photos only right now{% endif %}
+    </p>
+
+    <div class="queue" id="queue"></div>
+
+    <div id="namePrompt" class="hidden" style="margin-top:16px;padding:13px 15px;background:var(--accent-soft);border-radius:11px">
+      <p style="margin:0 0 9px;font-size:14px">Add your name so we know who these are from?</p>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="lateName" placeholder="Your name" style="flex:1">
+        <button class="btn small" id="saveName">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <details class="card" style="margin-top:14px">
+    <summary style="cursor:pointer;font-weight:600;font-size:15px;list-style:none">
+      ✍️&nbsp; Leave us a note instead
+    </summary>
+    <div style="margin-top:15px">
+      <label class="field">
+        <span>Your message</span>
+        <textarea id="noteText" placeholder="A wish, a memory, some advice…"></textarea>
+      </label>
+      <button class="btn ghost" id="noteBtn">Send it</button>
+    </div>
+  </details>
+
+  {% if s.allow_guest_gallery %}
+  <nav class="subnav" style="margin-top:24px">
+    <a href="/gallery">See everyone's photos →</a>
+  </nav>
+  {% endif %}
+</main>
+
+{% include "_footer.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.WEDDING = {
+    tableId: {{ (table_id or "") | tojson }},
+    maxFiles: {{ s.max_files_per_batch }},
+    maxBytes: {{ s.max_file_bytes }},
+    allowVideo: {{ 'true' if ffmpeg else 'false' }}
+  };
+</script>
+<script src="/static/js/upload.js"></script>
+{% endblock %}
