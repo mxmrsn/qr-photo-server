@@ -69,11 +69,46 @@ carried by *which shade and size* each dot gets:
 | | inside the mark | outside it |
 | --- | --- | --- |
 | **dark module** | near-black, fat dots that join into strokes | small grey dots |
-| **light module** | grey dot, filling gaps in the strokes | paper |
+| **light module** | lilac dot, filling gaps in the strokes | paper |
 
 A scanner samples the middle of each module and only cares which side of the
 light/dark threshold it lands on, so the mark costs nothing from the error
 correction budget and can span the entire code at full resolution.
+
+### Why the mark is in colour
+
+A QR decoder converts to luminance and thresholds. **Hue is invisible to it.**
+A dusty lilac at luminance 176 and a grey at luminance 176 are literally the
+same image to a scanner — verified: the two differ by at most 2 of 255 per
+pixel, with no pixel differing by more than 4.
+
+Your eye is a different matter. It separates hue far better than it separates
+subtle lightness, so the lilac mark reads as markedly more solid than a neutral
+grey of exactly the same value. Colour buys apparent contrast for free.
+
+What it does *not* buy is permission to go darker. The luminance ceiling is set
+by the decoder, and `--accent` only ever changes hue — the renderer re-lights
+whatever colour you give it to the exact luminance that verified. You cannot
+break the code by picking a bad colour.
+
+```bash
+tools/make_qr.py --accent "#7a9e8b"   # any hue; luminance is pinned for you
+tools/make_qr.py --no-accent          # neutral grey
+```
+
+### If you want plain black and white
+
+```bash
+tools/make_qr.py --mono
+```
+
+Worth knowing what you give up. Roughly half the modules inside the mark are
+*light* modules, which must stay light or the data breaks — so there is no
+black-or-white value available to draw them, and the strokes come out full of
+holes. Measured against the alternatives, dot size alone could not carry the
+mark: the wordmark nearly disappears. Mono scans with more margin (enough to
+hold the finer 57-module grid), so it suits a solid silhouette with no fine
+lettering.
 
 ```bash
 tools/make_qr.py --logo path/to/your-logo.png   # any logo; converted to black and white

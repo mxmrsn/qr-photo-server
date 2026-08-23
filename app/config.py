@@ -69,6 +69,10 @@ class Settings:
 
     # --- Look and feel --------------------------------------------------
     accent = _str("ACCENT", "#8a6f4e")             # warm gold
+    # Hue for the logo inside the QR code. Only the hue is used — the
+    # luminance is pinned to values that are verified to scan, so changing
+    # this can't break the code. Set blank for neutral grey.
+    qr_accent = _str("QR_ACCENT", "#9b8aa6")       # dusty lilac
     accent_soft = _str("ACCENT_SOFT", "#efe7db")
     ink = _str("INK", "#2c2825")
     paper = _str("PAPER", "#fbf8f3")

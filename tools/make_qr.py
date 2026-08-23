@@ -28,6 +28,7 @@ from app.qrstyle import (
     DEFAULT_LOGO,
     build_verified_qr,
     monochrome_logo,
+    parse_hex,
     render_qr,
 )
 
@@ -198,7 +199,8 @@ def render_card(
     qr_img, qr_note = build_verified_qr(
         url, qr_px, ink, logo,
         coverage=args.logo_coverage, min_modules=args.min_modules,
-        detail=args.logo_detail, style=args.style,
+        detail=args.logo_detail, style=args.style, mono=args.mono,
+        accent=args.accent_rgb,
     )
     render_card.last_note = qr_note
     card.paste(qr_img, (qr_x, y))
@@ -281,6 +283,15 @@ def main() -> int:
                     help="grid density; higher renders the logo finer (default 57)")
     ap.add_argument("--style", choices=["dots", "squares"], default="dots",
                     help="round dots (default) or classic squares")
+    ap.add_argument("--accent", default=None,
+                    help="hue for the logo inside the code, e.g. '#9b8aa6'. Only the "
+                         "hue is used; luminance is pinned to verified-scannable "
+                         f"values. Defaults to QR_ACCENT ({settings.qr_accent or 'none'})")
+    ap.add_argument("--no-accent", action="store_true", help="neutral grey logo")
+    ap.add_argument("--mono", action="store_true",
+                    help="black and white only; the logo is carried by dot size "
+                         "alone. Scans with more margin, but strokes break up "
+                         "wherever a light module falls inside the mark")
     ap.add_argument("--tables", default="",
                     help="optional: per-table codes, e.g. 1-18 (default is one shared code)")
     ap.add_argument("--labels", default="",
@@ -327,6 +338,12 @@ def main() -> int:
             print(f"error: no logo at {logo_path}", file=sys.stderr)
             return 2
     args.logo_coverage = max(0.20, min(args.logo_coverage, 1.0))
+    raw_accent = "" if args.no_accent else (
+        args.accent if args.accent is not None else settings.qr_accent)
+    args.accent_rgb = parse_hex(raw_accent)
+    if args.accent_rgb:
+        print(f"accent: #{''.join(f'{c:02x}' for c in args.accent_rgb)} "
+              f"(hue only — luminance is pinned to what verifies)")
     if args.no_logo:
         logo = None
 

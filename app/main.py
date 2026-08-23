@@ -610,7 +610,8 @@ async def qr_png(size: int = 8, url: str = ""):
         from . import qrstyle
 
         img, _ = qrstyle.build_verified_qr(
-            target, px, _hex_to_rgb(settings.ink), qrstyle.load_default_logo()
+            target, px, _hex_to_rgb(settings.ink), qrstyle.load_default_logo(),
+            accent=qrstyle.parse_hex(settings.qr_accent),
         )
         buf = io.BytesIO()
         img.save(buf, format="PNG")

@@ -91,6 +91,17 @@ TONES = {
                           # heavy ink spread, so 176 is the honest floor.
     "light_plain": 255,   # paper
 }
+# Pure black and white: the mark is carried by dot size alone.
+#
+# Not the default, and worth knowing why. Roughly half the modules inside the
+# mark are *light* modules, which must stay light or the data breaks — so there
+# is no black-or-white value that can draw them, and the mark's strokes come out
+# full of holes. Grey is the only tone available for those, which is exactly
+# what MONO gives up. Offered because it maximises scanning margin and some
+# marks (solid silhouettes, no fine lettering) survive the holes fine.
+MONO_TONES = {"dark_logo": 0, "dark_plain": 0, "light_logo": 255, "light_plain": 255}
+MONO_RADII = {"dark_logo": 0.50, "dark_plain": 0.28, "light_logo": 0.0}
+
 RADII = {
     "dark_logo": 0.50,    # the mark: fat dots that join into strokes
     "dark_plain": 0.30,   # the field: small dots that recede.
@@ -100,6 +111,37 @@ RADII = {
                           # gets *worse*, not better.
     "light_logo": 0.47,   # fills the gaps in the mark so strokes stay continuous
 }
+
+
+def _luma(rgb: tuple[int, int, int]) -> float:
+    """Rec.601 luminance — the number a QR decoder actually thresholds on."""
+    r, g, b = rgb
+    return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+def at_luma(rgb: tuple[int, int, int], target: float) -> tuple[int, int, int]:
+    """Re-light a colour to an exact luminance, keeping its hue.
+
+    This is the whole trick behind using colour here. A decoder sees only
+    luminance, so a teal pinned to the same luminance as our grey scans
+    identically — while the eye, which separates hue far better than it
+    separates subtle lightness, reads it as much more solid. Colour buys
+    apparent contrast for free; it does not buy permission to go darker.
+    """
+    import colorsys
+
+    r, g, b = (c / 255.0 for c in rgb)
+    h, l, sat = colorsys.rgb_to_hls(r, g, b)
+    lo, hi = 0.0, 1.0
+    for _ in range(24):                      # bisect on lightness
+        mid = (lo + hi) / 2
+        candidate = colorsys.hls_to_rgb(h, mid, sat)
+        if _luma(tuple(c * 255 for c in candidate)) < target:
+            lo = mid
+        else:
+            hi = mid
+    out = colorsys.hls_to_rgb(h, (lo + hi) / 2, sat)
+    return tuple(max(0, min(255, round(c * 255))) for c in out)  # type: ignore[return-value]
 
 
 def _tone(level: int, ink: tuple[int, int, int]) -> tuple[int, int, int]:
@@ -140,6 +182,7 @@ def render_qr(
     style: str = "dots",
     tones: dict | None = None,
     radii: dict | None = None,
+    accent: tuple[int, int, int] | None = None,
 ) -> Image.Image:
     """Draw a QR as a field of dots, with rounded finder patterns.
 
@@ -218,13 +261,21 @@ def render_qr(
             else:
                 continue                      # plain light module: leave the paper
 
-            colour = _tone(tone[key], ink)
+            r_factor = radii.get(key, 0.47)
+            if r_factor <= 0:
+                continue                      # e.g. mono mode, which has no fill
+
+            if accent is not None and key in ("dark_logo", "light_logo"):
+                # Hue is free; the luminance stays exactly where it verified.
+                colour = at_luma(accent, _luma(_tone(tone[key], ink)))
+            else:
+                colour = _tone(tone[key], ink)
             cx, cy = x * m + m / 2, y * m + m / 2
             if style == "squares":
-                half = m * radii.get(key, 0.5)
+                half = m * r_factor
                 d.rectangle([cx - half, cy - half, cx + half, cy + half], fill=colour)
             else:
-                r = m * radii.get(key, 0.47)
+                r = m * r_factor
                 d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=colour)
 
     # Finder patterns: always full contrast, never tinted.
@@ -301,10 +352,27 @@ LOGO_FALLBACKS: list[tuple[int, dict] | None] = [
 def build_verified_qr(url: str, px: int, ink: tuple[int, int, int],
                       logo: Image.Image | None,
                       coverage: float = 0.95, min_modules: int = 57,
-                      detail: int = 2, style: str = "dots") -> tuple[Image.Image, str]:
+                      detail: int = 2, style: str = "dots",
+                      mono: bool = False,
+                      accent: tuple[int, int, int] | None = None) -> tuple[Image.Image, str]:
     """Render the code, then prove it decodes before handing it back."""
     if logo is None:
         return render_qr(url, px, ink, style=style), "no logo"
+
+    if mono:
+        # Nothing to ease off here — the palette is already maximal contrast —
+        # so the only lever left is grid density.
+        for modules in [m for m in (57, 49, 45, 41, 37) if m <= min_modules] or [37]:
+            img = render_qr(url, px, ink, logo=logo, logo_coverage=coverage,
+                            min_modules=modules, style=style,
+                            tones=MONO_TONES, radii=MONO_RADII, accent=accent)
+            note = f"logo in black and white, {modules}-module grid"
+            verdict = scans_reliably(img, url)
+            if verdict is None:
+                return img, note + "  (unverified: pip install zxing-cpp to check)"
+            if verdict:
+                return img, note + "  verified"
+        return render_qr(url, px, ink, style=style), "logo dropped"
 
     ladder = [f for f in LOGO_FALLBACKS if f is None or f[0] <= min_modules] or [None]
     for attempt in ladder:
@@ -312,7 +380,8 @@ def build_verified_qr(url: str, px: int, ink: tuple[int, int, int],
             return render_qr(url, px, ink, style=style), "logo dropped — could not make it scan"
         modules, override = attempt
         img = render_qr(url, px, ink, logo=logo, logo_coverage=coverage,
-                        min_modules=modules, style=style, tones=override)
+                        min_modules=modules, style=style, tones=override,
+                        accent=accent)
         note = f"logo shaded across the code, {modules}-module grid"
         if override:
             note += ", contrast eased"
@@ -330,4 +399,17 @@ def load_default_logo() -> Image.Image | None:
     try:
         return monochrome_logo(DEFAULT_LOGO)
     except Exception:
+        return None
+
+
+def parse_hex(value: str) -> tuple[int, int, int] | None:
+    """'#9b8aa6' -> (155, 138, 166). Blank or malformed gives None (neutral)."""
+    value = (value or "").strip().lstrip("#")
+    if len(value) == 3:
+        value = "".join(c * 2 for c in value)
+    if len(value) != 6:
+        return None
+    try:
+        return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
+    except ValueError:
         return None
