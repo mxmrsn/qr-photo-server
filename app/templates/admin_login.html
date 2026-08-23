@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block body %}
+<main class="wrap" style="max-width:400px;margin-top:16vh">
+  <header class="masthead" style="padding-top:0">
+    <span class="flourish"></span>
+    <h1 style="font-size:30px">{{ s.couple_names }}</h1>
+    <p class="date">Album management</p>
+  </header>
+  <form class="card" method="post" action="/admin/login">
+    <label class="field">
+      <span>Password</span>
+      <input type="password" name="password" autofocus autocomplete="current-password">
+    </label>
+    {% if error %}
+      <p style="color:#b3402f;font-size:14px;margin:-6px 0 14px">{{ error }}</p>
+    {% endif %}
+    <button class="btn" type="submit">Sign in</button>
+  </form>
+  <p style="text-align:center;font-size:12.5px;opacity:.45;margin-top:16px">
+    The password is printed in the server console, and saved to
+    <code>data/admin_password.txt</code>.
+  </p>
+</main>
+{% endblock %}

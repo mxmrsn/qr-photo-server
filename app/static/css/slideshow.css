@@ -1,0 +1,124 @@
+/* Projector view. Dark, full-bleed, no chrome — this is furniture, not an app. */
+
+html, body {
+  margin: 0; padding: 0; height: 100%; overflow: hidden;
+  background: #0b0a09; color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  cursor: none;
+}
+body.show-cursor { cursor: default; }
+
+#stage { position: fixed; inset: 0; }
+
+.layer {
+  position: absolute; inset: 0; opacity: 0;
+  transition: opacity 1.4s ease-in-out;
+}
+.layer.on { opacity: 1; }
+
+/* A blurred, dimmed copy of the photo fills the letterbox bars. Far nicer on a
+   projector than hard black edges, and it hides screen-door texture. */
+.layer .bg {
+  position: absolute; inset: -6%;
+  background-size: cover; background-position: center;
+  filter: blur(46px) brightness(.34) saturate(1.15);
+}
+
+.layer .fg {
+  position: absolute; inset: 0;
+  background-size: contain; background-position: center; background-repeat: no-repeat;
+  will-change: transform;
+}
+.layer.on .fg { animation: kenburns var(--dwell, 7s) ease-out both; }
+
+@keyframes kenburns {
+  from { transform: scale(1.005) translate3d(0, 0, 0); }
+  to   { transform: scale(1.055) translate3d(var(--dx, -1%), var(--dy, 1%), 0); }
+}
+
+.layer video {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: contain; background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layer.on .fg { animation: none; }
+  .layer { transition-duration: .4s; }
+}
+
+/* ----------------------------------------------------------------- caption */
+
+.caption {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  padding: 130px 5vw 4.2vh;
+  background: linear-gradient(transparent, rgba(0,0,0,.78));
+  pointer-events: none;
+  transition: opacity .5s;
+}
+.caption.hide { opacity: 0; }
+
+.caption .msg {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-style: italic;
+  font-size: clamp(20px, 2.5vw, 40px);
+  line-height: 1.35; margin: 0 0 12px; max-width: 26em;
+  text-shadow: 0 2px 20px rgba(0,0,0,.7);
+}
+.caption .who {
+  font-size: clamp(13px, 1.15vw, 21px);
+  letter-spacing: .22em; text-transform: uppercase; opacity: .82;
+  text-shadow: 0 2px 12px rgba(0,0,0,.8);
+}
+
+/* ------------------------------------------------------------- new arrival */
+
+.arrival {
+  position: fixed; top: 4vh; left: 50%; transform: translate(-50%, -180%);
+  background: rgba(255,255,255,.95); color: #1a1815;
+  padding: 14px 30px; border-radius: 999px;
+  font-size: clamp(14px, 1.3vw, 22px); font-weight: 600; letter-spacing: .02em;
+  box-shadow: 0 20px 60px -14px rgba(0,0,0,.7);
+  transition: transform .7s cubic-bezier(.2,.9,.3,1.15);
+  white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+}
+.arrival.show { transform: translate(-50%, 0); }
+
+/* ------------------------------------------------------------------- promo */
+
+.promo {
+  position: fixed; right: 3vw; bottom: 4vh;
+  display: flex; align-items: center; gap: 16px;
+  background: rgba(255,255,255,.93); color: #1a1815;
+  padding: 13px 20px 13px 13px; border-radius: 16px;
+  box-shadow: 0 20px 60px -18px rgba(0,0,0,.8);
+  transition: opacity .5s;
+}
+.promo.hide { opacity: 0; }
+.promo img { width: clamp(62px, 5.6vw, 104px); height: auto; display: block; border-radius: 6px; }
+.promo .t { font-size: clamp(12px, 1.05vw, 17px); line-height: 1.45; }
+.promo .t b { display: block; font-size: clamp(13px, 1.2vw, 19px); margin-bottom: 3px; }
+.promo .t span { opacity: .62; }
+
+/* ------------------------------------------------------------------ states */
+
+.holding {
+  position: fixed; inset: 0; display: grid; place-items: center; text-align: center;
+  padding: 6vw;
+}
+.holding h1 {
+  font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  font-weight: 400; font-size: clamp(34px, 5.5vw, 78px); margin: 0 0 18px;
+}
+.holding p { font-size: clamp(15px, 1.6vw, 26px); opacity: .62; margin: 0; }
+
+.paused {
+  position: fixed; top: 3vh; right: 3vw; font-size: 13px; letter-spacing: .2em;
+  text-transform: uppercase; opacity: .55; display: none;
+}
+.paused.on { display: block; }
+
+.help {
+  position: fixed; left: 3vw; top: 3vh; font-size: 12px; letter-spacing: .1em;
+  opacity: 0; transition: opacity .3s; pointer-events: none;
+}
+body.show-cursor .help { opacity: .45; }

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ s.couple_names }}</title>
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/css/slideshow.css">
+<style>:root { --accent: {{ theme.accent }}; }</style>
+</head>
+<body>
+
+<div id="stage">
+  <div class="layer" id="layerA"></div>
+  <div class="layer" id="layerB"></div>
+</div>
+
+<div class="holding" id="holding">
+  <div>
+    <h1>{{ s.couple_names }}</h1>
+    <p id="holdingText">Scan the code on your table to add your photos</p>
+  </div>
+</div>
+
+<div class="caption" id="caption"></div>
+<div class="arrival" id="arrival"></div>
+
+<div class="promo" id="promo">
+  <img src="/qr.png?size=6" alt="QR code to upload photos">
+  <div class="t">
+    <b>Add your photos</b>
+    <span>{{ s.base_url.replace('https://','').replace('http://','') }}</span>
+  </div>
+</div>
+
+<div class="paused" id="paused">Paused</div>
+<div class="help">space pause · ← → step · c captions · q code · f fullscreen</div>
+
+<script>
+  window.SLIDESHOW = {
+    dwell: {{ s.slideshow_seconds }},
+    maxVideo: {{ s.slideshow_max_video_seconds }}
+  };
+</script>
+<script src="/static/js/slideshow.js"></script>
+</body>
+</html>

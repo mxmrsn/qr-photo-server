@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Album management{% endblock %}
+{% block head %}
+<style>
+  .admin-bar {
+    position: sticky; top: 0; z-index: 40; background: var(--paper);
+    border-bottom: 1px solid rgba(0,0,0,.08); padding: 12px 0;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }
+  .filters { display: flex; gap: 5px; flex-wrap: wrap; }
+  .filters button {
+    font: inherit; font-size: 13px; padding: 7px 13px; border-radius: 999px;
+    border: 1px solid rgba(0,0,0,.12); background: #fff; cursor: pointer; color: inherit;
+  }
+  .filters button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .agrid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr));
+    gap: 10px; padding: 18px 0 40px;
+  }
+  .acard {
+    position: relative; border-radius: 10px; overflow: hidden;
+    background: var(--accent-soft); border: 2px solid transparent;
+  }
+  .acard.sel { border-color: var(--accent); }
+  .acard img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; cursor: pointer; }
+  .acard .badges {
+    position: absolute; top: 6px; left: 6px; display: flex; gap: 4px; flex-wrap: wrap;
+  }
+  .badge {
+    font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    padding: 3px 7px; border-radius: 5px; background: rgba(0,0,0,.72); color: #fff;
+  }
+  .badge.warn { background: #b3402f; }
+  .badge.ok   { background: #3f7d4e; }
+  .acard .info {
+    padding: 7px 8px; font-size: 11.5px; background: #fff; line-height: 1.4;
+  }
+  .acard .info .g { font-weight: 600; }
+  .acard .info .m { opacity: .55; }
+  .acard .row { display: flex; gap: 4px; padding: 0 6px 7px; background: #fff; }
+  .acard .row button {
+    flex: 1; font: inherit; font-size: 11px; padding: 5px 0; border-radius: 6px;
+    border: 1px solid rgba(0,0,0,.12); background: #fff; cursor: pointer; color: inherit;
+  }
+  .acard .row button:hover { background: var(--accent-soft); }
+  .acard .row button.danger:hover { background: #fbe9e6; color: #b3402f; }
+  .acard .pick {
+    position: absolute; top: 6px; right: 6px; width: 24px; height: 24px;
+    border-radius: 6px; border: 2px solid #fff; background: rgba(0,0,0,.35);
+    cursor: pointer; display: grid; place-items: center; color: #fff; font-size: 14px;
+  }
+  .acard.sel .pick { background: var(--accent); }
+  .kpi { display: flex; gap: 22px; flex-wrap: wrap; padding: 18px 0 4px; }
+  .kpi div b { display: block; font-family: var(--serif); font-size: 24px; font-weight: 400; }
+  .kpi div span { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; opacity: .5; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="wrap" style="max-width:1240px">
+  <div class="kpi" id="kpi"></div>
+
+  <div class="admin-bar">
+    <div class="filters" id="filters">
+      <button data-f="all" class="on">All</button>
+      <button data-f="pending">Awaiting approval</button>
+      <button data-f="videos">Videos</button>
+      <button data-f="hidden">Hidden</button>
+      <button data-f="failed">Failed</button>
+    </div>
+    <div style="flex:1"></div>
+    <span id="selCount" style="font-size:13px;opacity:.6"></span>
+    <button class="btn small ghost" id="bulkApprove">Approve</button>
+    <button class="btn small ghost" id="bulkHide">Hide</button>
+    <button class="btn small ghost" id="bulkDelete">Delete</button>
+    <a class="btn small ghost" href="/api/admin/export.zip?what=originals">Download all</a>
+    <form method="post" action="/admin/logout" style="display:inline">
+      <button class="btn small ghost" type="submit">Sign out</button>
+    </form>
+  </div>
+
+  <div style="padding:14px 0 0">
+    <details>
+      <summary style="cursor:pointer;font-size:14px;opacity:.7">Guest notes</summary>
+      <div id="notes" style="max-width:640px;margin-top:14px"></div>
+    </details>
+  </div>
+
+  <div class="agrid" id="agrid"></div>
+  <div id="empty" class="empty hidden"><p>Nothing here.</p></div>
+  <div id="sentinel" style="height:30px"></div>
+</div>
+
+<div class="lightbox" id="lightbox">
+  <button class="x" id="lbClose">&times;</button>
+  <div style="text-align:center;max-width:100%">
+    <div id="lbStage"></div>
+    <div class="cap" id="lbCap"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script src="/static/js/admin.js"></script>{% endblock %}

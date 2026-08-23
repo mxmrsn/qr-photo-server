@@ -574,6 +574,43 @@ async def serve_original(request: Request, media_id: str):
 
 
 # --------------------------------------------------------------------------
+# Live QR code (used by the slideshow corner card)
+# --------------------------------------------------------------------------
+
+_qr_cache: dict[tuple[str, int], bytes] = {}
+
+
+@app.get("/qr.png")
+async def qr_png(size: int = 8, url: str = ""):
+    """QR for the upload page. Defaults to this instance's own base URL."""
+    import qrcode
+
+    target = url.strip() or settings.base_url + "/"
+    if not target.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Bad URL")
+    size = max(2, min(size, 20))
+
+    key = (target, size)
+    if key not in _qr_cache:
+        qr = qrcode.QRCode(
+            version=None, box_size=size, border=2,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+        )
+        qr.add_data(target)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color=settings.ink, back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        _qr_cache[key] = buf.getvalue()
+
+    return StreamingResponse(
+        io.BytesIO(_qr_cache[key]),
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+# --------------------------------------------------------------------------
 # Admin
 # --------------------------------------------------------------------------
 

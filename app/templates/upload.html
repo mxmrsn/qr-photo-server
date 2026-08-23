@@ -10,7 +10,7 @@
   {% endif %}
 
   <p class="lede" style="text-align:center;margin:14px auto 26px;max-width:30em;opacity:.78;line-height:1.6">
-    {{ s.welcome_message }}
+    {{ s.post_event_message if s.post_event else s.welcome_message }}
   </p>
 
   <div class="card">
