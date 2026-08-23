@@ -27,7 +27,7 @@ First run creates the virtual environment and installs dependencies. Then open:
 
 | | |
 | --- | --- |
-| **Guest upload** | `http://localhost:8000/` — or `/t/5` for table 5 |
+| **Guest upload** | `http://localhost:8000/` |
 | **The album** | `http://localhost:8000/gallery` |
 | **Projector** | `http://localhost:8000/slideshow` |
 | **Management** | `http://localhost:8000/admin` |
@@ -47,19 +47,67 @@ codes point at. Every setting is documented in the file.
 ### Print the table cards
 
 ```bash
-tools/make_qr.py --tables 1-18 --labels "Head Table,Bar,Patio"
+tools/make_qr.py --copies 18 --layout sheet
 ```
 
-Writes 5×7 cards and a print-ready PDF into `qr_out/`. Each card carries your
-names, the QR, the table name, and the URL in plain text for cameras that won't
-cooperate. `--layout sheet` puts four to a Letter page, which is far cheaper to
-print. `--wifi-ssid`/`--wifi-password` adds a second small QR that joins your
-Wi-Fi.
+One QR code for the whole wedding, printed as many times as you have tables.
+`--layout sheet` puts four cards on a Letter page with cut guides, so eighteen
+cards is five sheets rather than eighteen.
 
-> **Point `BASE_URL` at a domain you own, not an IP address.** A cheap domain
-> means you can move the server the morning of the wedding — or a month
-> afterwards — without reprinting sixty cards. This is the single best few
-> dollars you can spend on this project.
+The card carries your names, the code, and the URL in plain text underneath for
+any camera that won't cooperate. Output lands in `qr_out/`, including a
+print-ready PDF.
+
+**The code is styled**, not a stock black square: round dots instead of squares,
+rounded finder patterns, and the logo from `assets/` shaded *across the whole
+code* rather than punched into a white hole in the middle.
+
+That last part is the interesting bit. Nothing is covered up and no data is
+destroyed — every module keeps its correct light or dark value. The logo is
+carried by *which shade and size* each dot gets:
+
+| | inside the mark | outside it |
+| --- | --- | --- |
+| **dark module** | near-black, fat dots that join into strokes | small grey dots |
+| **light module** | pale grey dot, filling gaps in the strokes | paper |
+
+A scanner samples the middle of each module and only cares which side of the
+light/dark threshold it lands on, so the mark costs nothing from the error
+correction budget and can span the entire code at full resolution.
+
+```bash
+tools/make_qr.py --logo path/to/your-logo.png   # any logo; converted to black and white
+tools/make_qr.py --no-logo                      # plain code
+tools/make_qr.py --style squares                # classic square modules
+tools/make_qr.py --min-modules 57               # finer grid, crisper logo, less margin
+tools/make_qr.py --wifi-ssid Wedding --wifi-password loveislove   # + a code that joins your wifi
+```
+
+Any logo works. The background tone is read from the border pixels and
+everything that differs from it becomes ink, so a white mark on a coloured
+square and a dark mark on a light one both come out as clean black artwork.
+
+> **Every generated code is decoded before it's written out.** Shading a logo
+> across a QR eats into its contrast margin, and going too far fails silently —
+> the code looks perfect and simply never scans. So the tool reads its own
+> output back three times: crisp, shrunk and blurred, and through a punishing
+> simulation of a photo taken across a dim room with an unsteady hand. If a
+> setting doesn't survive all three it coarsens the grid and tries again, and
+> tells you what it settled on:
+>
+> ```
+> card-card.png   ->  https://photos.example.com/
+>       logo shaded across the code, 49-module grid  verified
+> ```
+>
+> Those thresholds are calibrated against a separate harness that renders whole
+> cards, warps them in perspective and decodes the result — not guessed. This
+> needs `zxing-cpp` (in `requirements.txt`); without it the tool says
+> `unverified` rather than pretending.
+
+If you'd rather know which table a photo came from, you can still print
+per-table codes with `--tables 1-18`, and the table name shows up on the upload
+page, in the gallery, and on the projector.
 
 ### Check everything before the day
 
@@ -139,6 +187,7 @@ app/
   media.py      HEIC/video normalisation into thumb + display JPEGs
   templates/    server-rendered pages
   static/       vanilla CSS and JS — no build step, nothing to compile
+  qrstyle.py    the dotted QR renderer + its scan verifier, shared with tools/
 tools/
   make_qr.py    printable table cards
   doctor.py     pre-flight checks

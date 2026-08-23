@@ -454,14 +454,21 @@ async def api_media(
 
 
 @app.get("/api/slideshow")
-async def api_slideshow(after: int = 0, limit: int = 300):
-    """Feed for the projector: newest first, plus a 'fresh' flag."""
+async def api_slideshow(after: int = 0, before: int = 0, limit: int = 300):
+    """Feed for the projector: newest first, plus a 'fresh' flag.
+
+    `after` polls for new arrivals; `before` pages backwards so the projector
+    can build up the whole evening rather than looping the most recent page.
+    """
     limit = max(1, min(limit, 500))
     where = db.visible_clause("slideshow")
     params: list = []
     if after:
         where += " AND seq > ?"
         params.append(after)
+    if before:
+        where += " AND seq < ?"
+        params.append(before)
     rows = db.query(
         f"SELECT * FROM media WHERE {where} ORDER BY seq DESC LIMIT ?", (*params, limit)
     )
@@ -579,25 +586,32 @@ async def serve_original(request: Request, media_id: str):
 _qr_cache: dict[tuple[str, int], bytes] = {}
 
 
+def _hex_to_rgb(value: str) -> tuple[int, int, int]:
+    value = value.lstrip("#")
+    if len(value) == 3:
+        value = "".join(c * 2 for c in value)
+    try:
+        return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
+    except ValueError:
+        return (0, 0, 0)
+
+
 @app.get("/qr.png")
 async def qr_png(size: int = 8, url: str = ""):
-    """QR for the upload page. Defaults to this instance's own base URL."""
-    import qrcode
-
+    """QR for the upload page, in the same dotted style as the printed cards."""
     target = url.strip() or settings.base_url + "/"
     if not target.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="Bad URL")
     size = max(2, min(size, 20))
+    px = size * 60          # `size` mirrors the old box-size feel
 
-    key = (target, size)
+    key = (target, px)
     if key not in _qr_cache:
-        qr = qrcode.QRCode(
-            version=None, box_size=size, border=2,
-            error_correction=qrcode.constants.ERROR_CORRECT_M,
+        from . import qrstyle
+
+        img, _ = qrstyle.build_verified_qr(
+            target, px, _hex_to_rgb(settings.ink), qrstyle.load_default_logo()
         )
-        qr.add_data(target)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color=settings.ink, back_color="white")
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         _qr_cache[key] = buf.getvalue()

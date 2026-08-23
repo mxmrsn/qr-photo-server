@@ -221,7 +221,7 @@
   }
 
   function initialLoad() {
-    fetch('/api/slideshow?limit=400')
+    fetch('/api/slideshow?limit=300')
       .then(function (r) { return r.json(); })
       .then(function (data) {
         absorb(data.items, false);
@@ -230,8 +230,29 @@
         refillPlaylist();
         if (pool.length) advance();
         else schedule(5000);
+        backfill();
       })
       .catch(function () { schedule(8000, initialLoad); });
+  }
+
+  /* Page backwards in the background until we hold the whole evening. Without
+     this the projector would loop the newest few hundred and quietly retire
+     everything from the ceremony. */
+  function backfill() {
+    var oldest = pool.reduce(function (min, item) {
+      return (min === 0 || item.seq < min) ? item.seq : min;
+    }, 0);
+    if (!oldest) return;
+
+    fetch('/api/slideshow?before=' + oldest + '&limit=300')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.items.length) return;          // reached the beginning
+        data.items.forEach(function (i) { i.fresh = false; });
+        var added = absorb(data.items, false);
+        if (added) setTimeout(backfill, 1500);   // gentle, so it never competes
+      })
+      .catch(function () {});
   }
 
   function poll() {

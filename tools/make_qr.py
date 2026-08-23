@@ -21,11 +21,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import qrcode
 from PIL import Image, ImageDraw, ImageFont
-from qrcode.constants import ERROR_CORRECT_H, ERROR_CORRECT_Q
 
 from app.config import settings
+from app.qrstyle import (
+    DEFAULT_LOGO,
+    build_verified_qr,
+    monochrome_logo,
+    render_qr,
+)
 
 DPI = 300
 
@@ -65,24 +69,6 @@ def hex_to_rgb(value: str) -> tuple[int, int, int]:
         return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore[return-value]
     except ValueError:
         return (0, 0, 0)
-
-
-def make_qr(data: str, px: int, dark: tuple[int, int, int], strong: bool = True) -> Image.Image:
-    """A QR sized to fill exactly `px` pixels.
-
-    High error correction matters here: these get printed, propped against a
-    centrepiece, and read in candlelight by a phone held at an angle.
-    """
-    qr = qrcode.QRCode(
-        version=None,
-        error_correction=ERROR_CORRECT_H if strong else ERROR_CORRECT_Q,
-        box_size=10,
-        border=0,
-    )
-    qr.add_data(data)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color=dark, back_color="white").convert("RGB")
-    return img.resize((px, px), Image.NEAREST)   # NEAREST keeps module edges crisp
 
 
 def wifi_payload(ssid: str, password: str, hidden: bool = False) -> str:
@@ -125,6 +111,7 @@ def render_card(
     url: str,
     args,
     size_in: tuple[float, float] = (5, 7),
+    logo: Image.Image | None = None,
 ) -> Image.Image:
     W, H = int(size_in[0] * DPI), int(size_in[1] * DPI)
     ink = hex_to_rgb(settings.ink)
@@ -208,7 +195,13 @@ def render_card(
         [qr_x - pad, y - pad, qr_x + qr_px + pad, y + qr_px + pad],
         radius=int(pad * 1.4), fill="white",
     )
-    card.paste(make_qr(url, qr_px, ink), (qr_x, y))
+    qr_img, qr_note = build_verified_qr(
+        url, qr_px, ink, logo,
+        coverage=args.logo_coverage, min_modules=args.min_modules,
+        detail=args.logo_detail, style=args.style,
+    )
+    render_card.last_note = qr_note
+    card.paste(qr_img, (qr_x, y))
     y += qr_px + pad + gap_l
 
     if label:
@@ -219,7 +212,8 @@ def render_card(
         y += gap_m
         d.line([(margin, y), (W - margin, y)], fill=accent, width=2)
         y += int(H * 0.004) + gap_m
-        wifi = make_qr(wifi_payload(args.wifi_ssid, args.wifi_password), wifi_px, ink, strong=False)
+        wifi = render_qr(wifi_payload(args.wifi_ssid, args.wifi_password), wifi_px, ink,
+                         strong=False, style=args.style)
         card.paste(wifi, (margin, y))
         tx = margin + wifi_px + int(W * 0.045)
         d.text((tx, y + int(wifi_px * 0.08)), "Join the Wi-Fi", font=f_call, fill=ink)
@@ -274,8 +268,23 @@ def parse_tables(spec: str) -> list[str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Generate printable QR table cards.")
-    ap.add_argument("--tables", default="", help="e.g. 1-18 or 1,2,5-8")
-    ap.add_argument("--labels", default="", help="comma-separated names, e.g. 'Bar,Patio'")
+    ap.add_argument("--copies", type=int, default=1,
+                    help="how many identical cards to print (one per table)")
+    ap.add_argument("--logo", default="",
+                    help=f"logo to set into the QR (default: {DEFAULT_LOGO.name} if present)")
+    ap.add_argument("--no-logo", action="store_true", help="plain QR, no logo")
+    ap.add_argument("--logo-coverage", type=float, default=0.95,
+                    help="how much of the code the logo spans (default 0.95)")
+    ap.add_argument("--logo-detail", type=int, default=2, choices=[1, 2, 3],
+                    help="dots per module used to draw the logo (default 2)")
+    ap.add_argument("--min-modules", type=int, default=57,
+                    help="grid density; higher renders the logo finer (default 57)")
+    ap.add_argument("--style", choices=["dots", "squares"], default="dots",
+                    help="round dots (default) or classic squares")
+    ap.add_argument("--tables", default="",
+                    help="optional: per-table codes, e.g. 1-18 (default is one shared code)")
+    ap.add_argument("--labels", default="",
+                    help="optional: per-place codes, e.g. 'Bar,Patio'")
     ap.add_argument("--url", default="", help="override BASE_URL")
     ap.add_argument("--out", default="qr_out", help="output directory")
     ap.add_argument("--layout", choices=["card", "sheet"], default="card",
@@ -303,39 +312,61 @@ def main() -> int:
         print(f"error: --size must look like 5x7 (got {args.size!r})", file=sys.stderr)
         return 2
 
+    # --- the logo that goes in the middle of the code --------------------
+    logo = None
+    if not args.no_logo:
+        logo_path = Path(args.logo) if args.logo else DEFAULT_LOGO
+        if logo_path.exists():
+            try:
+                logo = monochrome_logo(logo_path)
+                print(f"logo: {logo_path.name} -> black and white, "
+                      f"shaded across {args.logo_coverage:.0%} of the code")
+            except Exception as exc:
+                print(f"warning: could not use {logo_path}: {exc}", file=sys.stderr)
+        elif args.logo:
+            print(f"error: no logo at {logo_path}", file=sys.stderr)
+            return 2
+    args.logo_coverage = max(0.20, min(args.logo_coverage, 1.0))
+    if args.no_logo:
+        logo = None
+
+    # --- what to make ----------------------------------------------------
     labels = parse_tables(args.tables)
     labels += [l.strip() for l in args.labels.split(",") if l.strip()]
-    if not labels and not args.generic:
-        labels = parse_tables("1-10")
-        print("no --tables or --labels given; defaulting to tables 1-10\n")
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    for stale in out.glob("*.png"):
+    for stale in out.glob("card-*.png"):
         stale.unlink()
 
-    cards: list[Image.Image] = []
     targets: list[tuple[str, str]] = []
-
-    if args.generic:
+    if labels:
+        for label in labels:
+            pretty = f"Table {label}" if label.isdigit() else label
+            targets.append((pretty, f"{base}/t/{quote(label, safe='')}"))
+    else:
+        # One code for the whole wedding — the same card on every table.
         targets.append(("", base + "/"))
-    for label in labels:
-        pretty = label if not label.isdigit() else f"Table {label}"
-        slug = "".join(c if c.isalnum() else "-" for c in label.lower()).strip("-") or "general"
-        targets.append((pretty, f"{base}/t/{quote(label, safe='')}"))
 
+    cards: list[Image.Image] = []
     for pretty, url in targets:
-        card = render_card(pretty, url, args, (w_in, h_in))
+        card = render_card(pretty, url, args, (w_in, h_in), logo=logo)
         cards.append(card)
-        slug = "".join(c if c.isalnum() else "-" for c in pretty.lower()).strip("-") or "general"
+        slug = "".join(c if c.isalnum() else "-" for c in pretty.lower()).strip("-") or "card"
         card.save(out / f"card-{slug}.png", dpi=(DPI, DPI))
-        print(f"  card-{slug}.png   ->  {url}")
+        print(f"  card-{slug}.png   ->  {url}\n                  {getattr(render_card, 'last_note', '')}")
 
-    pages = sheet_of(cards) if args.layout == "sheet" else cards
+    # One design, many printed copies: you still need a card per table.
+    copies = max(1, args.copies)
+    to_print = [c for c in cards for _ in range(copies)] if copies > 1 else cards
+    if copies > 1:
+        print(f"  x{copies} copies -> {len(to_print)} cards to print")
+
+    pages = sheet_of(to_print) if args.layout == "sheet" else to_print
     pdf = out / ("table-cards-4up.pdf" if args.layout == "sheet" else "table-cards.pdf")
     pages[0].save(pdf, "PDF", resolution=DPI, save_all=True, append_images=pages[1:])
 
-    print(f"\n{len(cards)} card(s) -> {out}/")
+    print(f"\n{len(to_print)} card(s) to print -> {out}/")
     print(f"print this: {pdf}")
     if args.layout == "card":
         print("tip: --layout sheet puts 4 cards on a Letter page, which is much cheaper to print")

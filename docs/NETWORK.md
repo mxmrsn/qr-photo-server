@@ -5,6 +5,26 @@ photo service is a networking failure. This is the decision tree.
 
 ---
 
+## Your plan
+
+You've ruled out depending on cellular service, and you want guests to be able
+to keep uploading after the wedding. That settles the shape of this:
+
+- **On the day** — the server runs on the laptop at the venue. Guests upload
+  over local Wi-Fi (the venue's, if it's usable — otherwise your own access
+  points). Nothing depends on the internet being up. Go to
+  [Step 0](#step-0-scout-the-venue) to work out which.
+- **Afterwards** — a small cloud instance becomes the permanent home. You run
+  `tools/sync.py` to push the night's collection up to it, then send the link
+  round so people can add what's still on their phones.
+
+So read Step 0 and pick between **Plan 2, 3 or 4** for the day itself. Plan 1
+(cloud-only) is not your wedding-day answer, but it *is* the after-party one —
+you'll want that instance either way, so it's worth standing up early and using
+it as a rehearsal.
+
+---
+
 ## The one rule that saves you from all of this
 
 **Buy a cheap domain and print the QR codes pointing at it.**
@@ -49,12 +69,16 @@ directly to your laptop:
 # Times out   -> isolation is on, you need a tunnel or your own AP
 ```
 
-| Cell signal | Venue Wi-Fi | Go to |
-| --- | --- | --- |
-| Good | anything | [Plan 1 — cloud](#plan-1-cloud-hosted) |
-| Poor | Wi-Fi with internet | [Plan 2 — laptop + tunnel](#plan-2-laptop--tunnel-over-venue-wi-fi) |
-| Poor | Wi-Fi, internet, no isolation | [Plan 3 — direct LAN](#plan-3-laptop-directly-on-venue-wi-fi) |
-| Poor | none / dead zone | [Plan 4 — bring your own APs](#plan-4-bring-your-own-access-points) |
+| Venue Wi-Fi | Uplink | Isolation | Go to |
+| --- | --- | --- | --- |
+| Yes | working internet | on (or unknown) | [Plan 2 — laptop + tunnel](#plan-2-laptop--tunnel-over-venue-wi-fi) |
+| Yes | working internet | off | [Plan 3 — direct LAN](#plan-3-laptop-directly-on-venue-wi-fi) — fastest |
+| Yes | slow or none | off | [Plan 3 — direct LAN](#plan-3-laptop-directly-on-venue-wi-fi) |
+| No / unusable | — | — | [Plan 4 — bring your own APs](#plan-4-bring-your-own-access-points) |
+
+Cell signal no longer picks your plan, but **still check it** — it tells you
+whether guests can reach the after-the-wedding instance from the venue, and
+whether a phone hotspot is available as an uplink of last resort.
 
 **Every plan uses the same QR codes**, as long as you followed the rule above.
 

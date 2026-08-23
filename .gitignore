@@ -4,3 +4,4 @@ data/
 __pycache__/
 .env
 qr_out/
+.DS_Store
