@@ -16,6 +16,7 @@
     filePick: document.getElementById('filePick'),
     fileCam: document.getElementById('fileCam'),
     queue: document.getElementById('queue'),
+    preparing: document.getElementById('preparing'),
     namePrompt: document.getElementById('namePrompt'),
     lateName: document.getElementById('lateName'),
     saveName: document.getElementById('saveName'),
@@ -157,8 +158,37 @@
     els.cameraBtn.classList.remove('hidden');
   }
 
-  els.pickBtn.addEventListener('click', function () { els.filePick.click(); });
-  els.cameraBtn.addEventListener('click', function () { els.fileCam.click(); });
+  var prepareTimer = null;
+
+  function showPreparing() {
+    // Only after a beat — for one small photo the hand-off is instant and a
+    // flash of spinner is worse than nothing.
+    clearTimeout(prepareTimer);
+    prepareTimer = setTimeout(function () {
+      els.preparing.classList.add('show');
+    }, 900);
+  }
+
+  function hidePreparing() {
+    clearTimeout(prepareTimer);
+    els.preparing.classList.remove('show');
+  }
+
+  els.pickBtn.addEventListener('click', function () {
+    showPreparing();
+    els.filePick.click();
+  });
+  els.cameraBtn.addEventListener('click', function () {
+    showPreparing();
+    els.fileCam.click();
+  });
+
+  // If they backed out of the picker without choosing anything, stop hinting.
+  window.addEventListener('focus', function () {
+    setTimeout(function () {
+      if (!els.filePick.files.length && !els.fileCam.files.length) hidePreparing();
+    }, 1200);
+  });
 
   els.filePick.addEventListener('change', function () { accept(this.files); this.value = ''; });
   els.fileCam.addEventListener('change', function () { accept(this.files); this.value = ''; });
@@ -166,6 +196,7 @@
   /* ------------------------------------------------------------- queueing */
 
   function accept(fileList) {
+    hidePreparing();
     var files = Array.prototype.slice.call(fileList || []);
     if (!files.length) return;
 
@@ -173,8 +204,19 @@
       toast('Sending the first ' + cfg.maxFiles + ' — add the rest after.');
       files = files.slice(0, cfg.maxFiles);
     }
+
+    // Order matters here. Every file is queued and uploading BEFORE a single
+    // preview is decoded, because previews are decoration and uploading is the
+    // entire job. Doing it the other way round meant a big selection could
+    // exhaust Safari's memory during decode and the page would reload having
+    // sent nothing at all.
+    var batchStart = items.length;
     files.forEach(add);
     pump();
+    for (var i = batchStart; i < items.length; i++) {
+      queuePreview(i, i - batchStart);
+    }
+    pumpPreviews();
   }
 
   function add(file) {
@@ -188,7 +230,7 @@
     };
     item.el = render(item);
     els.queue.appendChild(item.el);
-    thumbnail(item);
+    items.push(item);
 
     if (isVideo && !cfg.allowVideo) return fail(item, 'Videos are unavailable');
     if (file.size > cfg.maxBytes) return fail(item, 'Too large (' + humanBytes(file.size) + ')');
@@ -244,20 +286,97 @@
     item.el.querySelector('.state').appendChild(btn);
   }
 
-  /* ----------------------------------------------------------- thumbnails */
+  /* ----------------------------------------------------------- thumbnails
 
-  function thumbnail(item) {
+     Generated one at a time, after uploading has already started, and at a
+     reduced decode size where the browser supports it. A phone asked to
+     decode twenty full-resolution photos at once will simply die. */
+
+  var items = [];              // every queued item, in selection order
+  var previewQueue = [];
+  var previewBusy = false;
+
+  // Past this many files the previews stop being useful anyway, and the
+  // cheapest decode is the one you don't do.
+  var MAX_PREVIEWS = 24;
+
+  // positionInBatch, not the global index: someone who adds twelve photos,
+  // then twelve more, should get previews both times.
+  function queuePreview(index, positionInBatch) {
+    if (positionInBatch < MAX_PREVIEWS) previewQueue.push(index);
+    else glyphOnly(index);
+  }
+
+  function glyphOnly(index) {
+    var item = items[index];
+    if (item) filmGlyph(item.el.querySelector('.thumb'));
+  }
+
+  function pumpPreviews() {
+    if (previewBusy) return;
+    var index = previewQueue.shift();
+    if (index === undefined) return;
+    var item = items[index];
+    if (!item) { pumpPreviews(); return; }
+    previewBusy = true;
+    thumbnail(item, function () {
+      previewBusy = false;
+      // Yield to the event loop so decoding never blocks an upload callback.
+      setTimeout(pumpPreviews, 0);
+    });
+  }
+
+
+  function thumbnail(item, done) {
     var img = item.el.querySelector('.thumb');
-    var url = URL.createObjectURL(item.file);
+    var finish = function () { if (done) { done(); done = null; } };
 
     if (!item.isVideo) {
-      img.src = url;
-      img.onload = function () { URL.revokeObjectURL(url); };
-      img.onerror = function () { URL.revokeObjectURL(url); filmGlyph(img); };
+      // createImageBitmap decodes straight to the size we need instead of
+      // inflating a 12-megapixel photo into memory to draw it at 46px.
+      if (window.createImageBitmap) {
+        createImageBitmap(item.file, { resizeWidth: 92, resizeQuality: 'low' })
+          .then(function (bitmap) {
+            try {
+              var canvas = document.createElement('canvas');
+              canvas.width = 92;
+              canvas.height = 92;
+              var scale = Math.max(92 / bitmap.width, 92 / bitmap.height);
+              var w = bitmap.width * scale, h = bitmap.height * scale;
+              canvas.getContext('2d').drawImage(bitmap, (92 - w) / 2, (92 - h) / 2, w, h);
+              img.src = canvas.toDataURL('image/jpeg', 0.7);
+            } catch (e) { filmGlyph(img); }
+            if (bitmap.close) bitmap.close();
+            finish();
+          })
+          .catch(function () { objectUrlPreview(item, img, finish); });
+        return;
+      }
+      objectUrlPreview(item, img, finish);
       return;
     }
 
-    // Grab a frame so videos aren't anonymous grey boxes in the queue.
+    videoPreview(item, img, finish);
+  }
+
+  function objectUrlPreview(item, img, finish) {
+    var url = URL.createObjectURL(item.file);
+    var settled = false;
+    var release = function (ok) {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      if (!ok) filmGlyph(img);
+      finish();
+    };
+    img.onload = function () { release(true); };
+    img.onerror = function () { release(false); };
+    setTimeout(function () { release(true); }, 6000);
+    img.src = url;
+  }
+
+  function videoPreview(item, img, finish) {
+    var url = URL.createObjectURL(item.file);
     var video = document.createElement('video');
     video.muted = true;
     video.playsInline = true;
@@ -267,7 +386,10 @@
       if (settled) return;
       settled = true;
       URL.revokeObjectURL(url);
+      video.removeAttribute('src');
+      try { video.load(); } catch (e) {}
       if (!ok) filmGlyph(img);
+      finish();
     };
 
     video.addEventListener('loadeddata', function () {
