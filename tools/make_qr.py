@@ -114,88 +114,122 @@ def render_card(
     size_in: tuple[float, float] = (5, 7),
     logo: Image.Image | None = None,
 ) -> Image.Image:
+    """Draw one table card.
+
+    With Wi-Fi details supplied the card becomes two numbered steps, because on
+    a local-only setup a guest who scans without joining the network first gets
+    a browser error and gives up. Joining is genuinely step one, so it is
+    printed first and looks like an instruction rather than a footnote.
+    """
     W, H = int(size_in[0] * DPI), int(size_in[1] * DPI)
     ink = hex_to_rgb(settings.ink)
     accent = hex_to_rgb(settings.accent)
     paper = hex_to_rgb(args.card_bg or settings.paper)
+    wifi_mode = bool(args.wifi_ssid)
+    wifi_qr = wifi_mode and getattr(args, 'wifi_qr', False)
 
     card = Image.new("RGB", (W, H), paper)
     d = ImageDraw.Draw(card)
 
-    f_names = load_font(SERIF_FONTS, int(W * 0.098))
-    f_date = load_font(SERIF_FONTS, int(W * 0.036))
-    f_call = load_font(SANS_FONTS, int(W * 0.038))
-    f_label = load_font(SERIF_FONTS, int(W * 0.058))
-    f_url = load_font(SANS_FONTS, int(W * 0.029))
-    f_tiny = load_font(SANS_FONTS, int(W * 0.024))
+    f_names = load_font(SERIF_FONTS, int(W * (0.070 if wifi_mode else 0.098)))
+    f_date = load_font(SERIF_FONTS, int(W * 0.034))
+    f_step = load_font(SANS_FONTS, int(W * (0.032 if wifi_mode else 0.037)))
+    f_ssid = load_font(SERIF_FONTS, int(W * 0.040))
+    f_pass = load_font(SANS_FONTS, int(W * 0.028))
+    f_label = load_font(SERIF_FONTS, int(W * 0.052))
+    f_url = load_font(SANS_FONTS, int(W * 0.028))
+    f_tiny = load_font(SANS_FONTS, int(W * 0.023))
 
     margin = int(W * 0.085)
     inner = W - margin * 2
-    top = int(H * 0.062)
-    bottom = int(H * 0.052)
+    top = int(H * (0.040 if wifi_mode else 0.055))
+    bottom = int(H * (0.036 if wifi_mode else 0.048))
+    tight = 0.70 if wifi_mode else 1.0
+    gap_s = int(H * 0.010 * tight)
+    gap_m = int(H * 0.018 * tight)
+    gap_l = int(H * 0.027 * tight)
 
-    gap_s, gap_m, gap_l = int(H * 0.011), int(H * 0.020), int(H * 0.030)
-
-    # --- measure everything before drawing anything ----------------------
-    call_lines = wrap(d, args.call_to_action, f_call, inner)
+    step_one = "1   Join the Wi-Fi" if wifi_mode else ""
+    step_two = ("2   " + args.call_to_action) if wifi_mode else args.call_to_action
+    two_lines = wrap(d, step_two, f_step, inner)
     pretty_url = url.replace("https://", "").replace("http://", "").rstrip("/")
 
-    above = int(H * 0.006) + gap_m                                  # rule
-    above += line_height(f_names) + gap_s
+    # --- measure -----------------------------------------------------
+    above = int(H * 0.006) + gap_m + line_height(f_names) + gap_s
     if settings.event_date:
         above += line_height(f_date) + gap_s
-    above += gap_s + sum(line_height(f_call) for _ in call_lines) + gap_m
+
+    wifi_px = 0
+    if wifi_mode:
+        wifi_px = int(inner * 0.22) if wifi_qr else 0
+        text_width = inner - wifi_px - (int(W * 0.038) if wifi_qr else 0)
+        one_lines = wrap(d, step_one, f_step, text_width)
+        above += gap_m + sum(line_height(f_step) for _ in one_lines)
+        above += max(wifi_px, line_height(f_ssid) + line_height(f_pass)) + gap_m
+        above += int(H * 0.004) + gap_m            # divider
+
+    above += gap_s + sum(line_height(f_step) for _ in two_lines) + gap_m
 
     below = gap_l
     if label:
         below += line_height(f_label) + gap_s
     below += line_height(f_url)
-
-    wifi_px = 0
-    if args.wifi_ssid:
-        wifi_px = int(inner * 0.34)
-        below += gap_m + int(H * 0.004) + gap_m + wifi_px
     if settings.event_hashtag:
         below += gap_m + line_height(f_tiny)
 
-    # Whatever vertical room is left belongs to the QR — it is the one element
-    # that must never be cramped, and the one that can absorb the slack.
     pad_ratio = 0.045
     room = H - top - bottom - above - below
     qr_px = int(min(inner * 0.92, room / (1 + 2 * pad_ratio)))
-    if qr_px < inner * 0.42:
-        # Too much text to fit a scannable code; drop the call to action.
-        call_lines = call_lines[:1]
-        above = int(H * 0.006) + gap_m + line_height(f_names) + gap_s
-        if settings.event_date:
-            above += line_height(f_date) + gap_s
-        above += gap_s + line_height(f_call) + gap_m
+    if qr_px < inner * 0.44 and len(two_lines) > 1:
+        two_lines = two_lines[:1]
+        above -= sum(line_height(f_step) for _ in range(1))
         room = H - top - bottom - above - below
         qr_px = int(min(inner * 0.92, room / (1 + 2 * pad_ratio)))
 
     block_h = above + int(qr_px * (1 + 2 * pad_ratio)) + below
     y = int(top + max(0, (H - top - bottom - block_h) // 2))
 
-    # --- draw ------------------------------------------------------------
+    # --- draw --------------------------------------------------------
     d.line([(W / 2 - inner * 0.11, y), (W / 2 + inner * 0.11, y)], fill=accent, width=3)
     y += int(H * 0.006) + gap_m
-
     y += draw_centred(d, y, settings.couple_names, f_names, ink, W) + gap_s
     if settings.event_date:
         y += draw_centred(d, y, settings.event_date, f_date, accent, W) + gap_s
 
+    if wifi_mode:
+        y += gap_m
+        text_x = margin + wifi_px + (int(W * 0.038) if wifi_qr else 0)
+        wifi_top = y
+        for line in one_lines:
+            d.text((text_x, y), line, font=f_step, fill=ink)
+            y += line_height(f_step)
+        y += int(H * 0.004)
+        d.text((text_x, y), args.wifi_ssid, font=f_ssid, fill=accent)
+        y += line_height(f_ssid)
+        if args.wifi_password:
+            d.text((text_x, y), f"password  {args.wifi_password}", font=f_pass, fill=ink)
+            y += line_height(f_pass)
+
+        if wifi_qr:
+            wifi_img = render_qr(wifi_payload(args.wifi_ssid, args.wifi_password),
+                                 wifi_px, ink, strong=False, style=args.style)
+            card.paste(wifi_img, (margin, wifi_top + int(H * 0.006)))
+            y = max(y, wifi_top + wifi_px + int(H * 0.006))
+        y += gap_m
+
+        d.line([(margin, y), (W - margin, y)], fill=accent, width=2)
+        y += int(H * 0.004) + gap_m
+
     y += gap_s
-    for line in call_lines:
-        y += draw_centred(d, y, line, f_call, ink, W)
+    for line in two_lines:
+        y += draw_centred(d, y, line, f_step, ink, W)
     y += gap_m
 
     pad = int(qr_px * pad_ratio)
     qr_x = (W - qr_px) // 2
     y += pad
-    d.rounded_rectangle(
-        [qr_x - pad, y - pad, qr_x + qr_px + pad, y + qr_px + pad],
-        radius=int(pad * 1.4), fill="white",
-    )
+    d.rounded_rectangle([qr_x - pad, y - pad, qr_x + qr_px + pad, y + qr_px + pad],
+                        radius=int(pad * 1.4), fill="white")
     qr_img, qr_note = build_verified_qr(
         url, qr_px, ink, logo,
         coverage=args.logo_coverage, min_modules=args.min_modules,
@@ -209,20 +243,6 @@ def render_card(
     if label:
         y += draw_centred(d, y, label, f_label, accent, W) + gap_s
     y += draw_centred(d, y, pretty_url, f_url, ink, W)
-
-    if args.wifi_ssid:
-        y += gap_m
-        d.line([(margin, y), (W - margin, y)], fill=accent, width=2)
-        y += int(H * 0.004) + gap_m
-        wifi = render_qr(wifi_payload(args.wifi_ssid, args.wifi_password), wifi_px, ink,
-                         strong=False, style=args.style)
-        card.paste(wifi, (margin, y))
-        tx = margin + wifi_px + int(W * 0.045)
-        d.text((tx, y + int(wifi_px * 0.08)), "Join the Wi-Fi", font=f_call, fill=ink)
-        d.text((tx, y + int(wifi_px * 0.42)), args.wifi_ssid, font=f_url, fill=accent)
-        if args.wifi_password:
-            d.text((tx, y + int(wifi_px * 0.68)), args.wifi_password, font=f_tiny, fill=ink)
-        y += wifi_px + gap_m
 
     if settings.event_hashtag:
         draw_centred(d, H - bottom - line_height(f_tiny), settings.event_hashtag, f_tiny, accent, W)
@@ -301,13 +321,23 @@ def main() -> int:
     ap.add_argument("--layout", choices=["card", "sheet"], default="card",
                     help="one 5x7 card per page, or 4-up on Letter")
     ap.add_argument("--size", default="5x7", help="card size in inches, e.g. 4x6")
-    ap.add_argument("--call-to-action", default="Scan to share your photos and videos with us")
+    ap.add_argument("--call-to-action", default="",
+                    help="wording above the code; defaults to fit whether wifi is shown")
     ap.add_argument("--card-bg", default="", help="hex background, defaults to the site's paper")
     ap.add_argument("--wifi-ssid", default="", help="add a second QR that joins your wifi")
     ap.add_argument("--wifi-password", default="")
+    ap.add_argument("--wifi-qr", action="store_true",
+                    help="also print a scannable code that joins the network. "
+                         "Convenient, but it costs the upload code about a third "
+                         "of its size, which measurably hurts scanning in low light")
     ap.add_argument("--generic", action="store_true",
                     help="also make one card with no table label")
     args = ap.parse_args()
+
+    if not args.call_to_action:
+        args.call_to_action = ("Then scan to share your photos and videos"
+                               if args.wifi_ssid
+                               else "Scan to share your photos and videos with us")
 
     base = (args.url or settings.base_url).rstrip("/")
     if not base.startswith(("http://", "https://")):

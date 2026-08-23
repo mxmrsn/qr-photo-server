@@ -137,7 +137,8 @@ tools/make_qr.py --logo path/to/your-logo.png   # any logo; converted to black a
 tools/make_qr.py --no-logo                      # plain code
 tools/make_qr.py --style squares                # classic square modules
 tools/make_qr.py --min-modules 57               # finer grid, crisper logo, less margin
-tools/make_qr.py --wifi-ssid Wedding --wifi-password loveislove   # + a code that joins your wifi
+tools/make_qr.py --wifi-ssid Wedding --wifi-password loveislove   # two-step card
+tools/make_qr.py --wifi-ssid Wedding --wifi-qr                    # + a scannable join code
 ```
 
 Any logo works. The background tone is read from the border pixels and
@@ -162,6 +163,27 @@ square and a dark mark on a light one both come out as clean black artwork.
 > the result — not guessed. The check is deterministic, so the same inputs
 > always produce the same card. This needs `zxing-cpp` (in `requirements.txt`);
 > without it the tool says `unverified` rather than pretending.
+
+### Running local-only
+
+If the server lives on your own network with no public address, a guest who
+scans without joining the Wi-Fi first gets a browser error and gives up. Pass
+`--wifi-ssid` and the card becomes two numbered steps, joining first:
+
+```
+  1  Join the Wi-Fi
+     MaxRachel
+     password  loveislove
+  ─────────────────────────
+  2  Then scan to share your photos and videos
+     [ code ]
+```
+
+The network details print as **text, not a second QR**, on purpose. A join code
+is convenient, but two codes on one card make both smaller: measured over 36
+simulated photographs, the upload code scans 36/36 as text-only and 31/36 with
+a join code beside it. The upload code is the one that matters, so it gets the
+space. `--wifi-qr` adds the join code anyway if you'd rather have it.
 
 If you'd rather know which table a photo came from, you can still print
 per-table codes with `--tables 1-18`, and the table name shows up on the upload
