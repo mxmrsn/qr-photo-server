@@ -17,6 +17,7 @@
     fileCam: document.getElementById('fileCam'),
     queue: document.getElementById('queue'),
     preparing: document.getElementById('preparing'),
+    preparingText: document.getElementById('preparingText'),
     namePrompt: document.getElementById('namePrompt'),
     lateName: document.getElementById('lateName'),
     saveName: document.getElementById('saveName'),
@@ -159,19 +160,38 @@
   }
 
   var prepareTimer = null;
+  var prepareEscalate = null;
+
+  var PREPARING_NORMAL =
+    "Getting your photos ready — this can take a moment for a big batch";
+  // If the phone is still chewing after this long it is almost certainly
+  // pulling originals down from iCloud, which cannot finish on a network with
+  // no internet. Saying so turns an unexplained freeze into something the
+  // guest can actually act on.
+  var PREPARING_STUCK =
+    "Still waiting on your phone. If your photos are stored in iCloud rather " +
+    "than on the device, they may not download here — try a photo you took " +
+    "today, or ask us about the wifi.";
 
   function showPreparing() {
     // Only after a beat — for one small photo the hand-off is instant and a
     // flash of spinner is worse than nothing.
     clearTimeout(prepareTimer);
+    clearTimeout(prepareEscalate);
+    els.preparingText.textContent = PREPARING_NORMAL;
     prepareTimer = setTimeout(function () {
       els.preparing.classList.add('show');
     }, 900);
+    prepareEscalate = setTimeout(function () {
+      els.preparingText.textContent = PREPARING_STUCK;
+    }, 20000);
   }
 
   function hidePreparing() {
     clearTimeout(prepareTimer);
+    clearTimeout(prepareEscalate);
     els.preparing.classList.remove('show');
+    els.preparingText.textContent = PREPARING_NORMAL;
   }
 
   els.pickBtn.addEventListener('click', function () {

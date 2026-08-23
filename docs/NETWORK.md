@@ -25,6 +25,59 @@ it as a rehearsal.
 
 ---
 
+## The uplink is not optional: iCloud
+
+**Confirmed by testing, and it is the single most expensive thing to get wrong.**
+
+A guest selects photos, taps the checkmark, and their iPhone shows **"Preparing
+media…"** — forever. Nothing reaches the server; the upload page never even sees
+a file. It looks exactly like the software is broken, and no amount of fixing
+the software helps.
+
+What is happening: with **Settings → Photos → Optimize iPhone Storage** enabled,
+full-resolution originals live in iCloud and only small previews stay on the
+device. Handing a photo to a web page requires downloading the original first.
+On a network with no internet, that download cannot complete, and iOS waits
+indefinitely.
+
+That setting turns itself on when a phone runs low on space, so a meaningful
+share of guests will have it.
+
+### What survives and what doesn't
+
+| | |
+| --- | --- |
+| Photos taken **at the wedding** | usually fine — recent shots are still on the device |
+| Anything **older**, or on a **nearly-full phone** | fails, silently, forever |
+| Android | unaffected; it does not do this |
+
+So the common case mostly works, which is exactly what makes this dangerous: it
+passes a casual test and fails for the guest with three years of photos and no
+free storage.
+
+### The fix
+
+**Give the router any internet uplink.** A phone hotspot into the WAN port is
+enough. It carries no photos — uploads still travel over local wifi at full
+speed — it exists purely so iPhones can materialise their own pictures.
+
+This also settles the older question about iOS marking the network "No
+Internet". That alone was cosmetic; this is not.
+
+### If you truly cannot get an uplink
+
+- Put a line on the table cards: *"Photos from today work best."*
+- Tell guests they can set **Settings → Photos → Download and Keep Originals**,
+  though asking wedding guests to change phone settings is optimistic.
+- Expect to collect the rest afterwards, from the cloud instance.
+
+The upload page helps a little: if the hand-off takes more than twenty seconds
+it stops saying "getting your photos ready" and explains that iCloud photos may
+not download here. That turns a mystifying freeze into something a guest can
+act on, but it does not get you the photo.
+
+---
+
 ## The one rule that saves you from all of this
 
 **Buy a cheap domain and print the QR codes pointing at it.**
@@ -492,6 +545,9 @@ Also set Energy Saver to never sleep, and leave it on AC power, not battery.
 
 ## Day-of checklist
 
+- [ ] **Router has an internet uplink** — without one, guests with iCloud
+      photos cannot upload at all (see above; this is not optional)
+- [ ] Tested with a phone that has **Optimize iPhone Storage** on
 - [ ] Server reachable from a phone **on cellular** — not just your own browser
 - [ ] Server reachable from a phone **on the venue Wi-Fi**
 - [ ] HTTPS certificate valid, if you expect the camera button to work
