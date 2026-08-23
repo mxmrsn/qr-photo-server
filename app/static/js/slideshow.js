@@ -13,6 +13,8 @@
   var layers = [document.getElementById('layerA'), document.getElementById('layerB')];
   var holding = document.getElementById('holding');
   var captionEl = document.getElementById('caption');
+  var subsEl = document.getElementById('subs');
+  var attribEl = document.getElementById('attrib');
   var arrivalEl = document.getElementById('arrival');
   var promoEl = document.getElementById('promo');
   var pausedEl = document.getElementById('paused');
@@ -85,6 +87,7 @@
     back.classList.add('on');
     front = 1 - front;
 
+    subsEl.innerHTML = '';
     paintCaption(item);
     if (item.fresh) announce(item);
     preloadNext();
@@ -110,11 +113,21 @@
     layer.appendChild(bg);
 
     var video = document.createElement('video');
-    video.src = item.video;
-    video.muted = true;             // autoplay policy, and nobody wants the audio
+    video.src = item.video;         // server-side copy with the audio removed
+    // Belt and braces: the file has no audio track, and the element is muted
+    // anyway. A projector accidentally blasting a room is unrecoverable.
+    video.muted = true;
+    video.defaultMuted = true;
+    video.volume = 0;
+    video.setAttribute('muted', '');
+    video.disableRemotePlayback = true;
     video.playsInline = true;
     video.autoplay = true;
+    video.controls = false;
     video.poster = item.display;
+    video.addEventListener('volumechange', function () {
+      if (!video.muted || video.volume > 0) { video.muted = true; video.volume = 0; }
+    });
     layer.appendChild(video);
 
     var moved = false;
@@ -122,6 +135,26 @@
 
     video.addEventListener('ended', go);
     video.addEventListener('error', go);
+
+    // Videos play muted, so whatever was said is shown instead. Segments come
+    // from the server already transcribed; this just follows the clock.
+    var cues = item.captions || [];
+    if (cues.length) {
+      var shown = null;
+      video.addEventListener('timeupdate', function () {
+        var t = video.currentTime;
+        var cue = null;
+        for (var i = 0; i < cues.length; i++) {
+          if (t >= cues[i].start - 0.15 && t <= cues[i].end + 0.35) { cue = cues[i]; break; }
+        }
+        var text = cue ? cue.text : '';
+        if (text !== shown) {
+          shown = text;
+          subsEl.innerHTML = text ? '<span>' + escapeHtml(text) + '</span>' : '';
+        }
+      });
+      video.addEventListener('ended', function () { subsEl.innerHTML = ''; });
+    }
 
     // Budget: the clip's own length plus a beat, capped so one guest's
     // five-minute video can't hold the screen hostage.
@@ -151,8 +184,9 @@
     var html = '';
     if (item.message) html += '<p class="msg">&ldquo;' + escapeHtml(item.message) + '&rdquo;</p>';
     if (who) html += '<div class="who">' + escapeHtml(who) + '</div>';
-    captionEl.innerHTML = html;
-    captionEl.classList.toggle('hide', !showCaptions || !html);
+    attribEl.innerHTML = html;
+    captionEl.classList.remove('hide');
+    if (!showCaptions) captionEl.classList.add('hide');
   }
 
   function announce(item) {

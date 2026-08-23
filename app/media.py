@@ -183,6 +183,46 @@ def _video_creation_time(info: dict) -> float | None:
         return None
 
 
+def silent_path(stem: str) -> Path:
+    """Where the audio-free playback copy lives."""
+    return settings.display_dir / f"{stem}.silent.mp4"
+
+
+def make_silent_copy(src: Path, stem: str) -> bool:
+    """Write a video-only rendition for the projector.
+
+    The slideshow plays muted, but muted is a browser setting — the audio is
+    still in the file, one stray unmute away from a reception hall. This strips
+    the track outright. It's a stream copy, so it costs a second and no quality.
+    """
+    if not FFMPEG:
+        return False
+    dest = silent_path(stem)
+    cmd = [FFMPEG, "-nostdin", "-y", "-loglevel", "error", "-i", str(src),
+           "-an",                       # drop every audio stream
+           "-c:v", "copy",              # no re-encode
+           "-movflags", "+faststart",   # so it starts playing before it's all there
+           str(dest)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=900)
+    except subprocess.TimeoutExpired:
+        return False
+    if proc.returncode != 0 or not dest.exists() or dest.stat().st_size == 0:
+        # Some containers won't take a straight copy; re-encode as a fallback.
+        cmd = [FFMPEG, "-nostdin", "-y", "-loglevel", "error", "-i", str(src),
+               "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+               "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(dest)]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, timeout=1800)
+        except subprocess.TimeoutExpired:
+            dest.unlink(missing_ok=True)
+            return False
+        if proc.returncode != 0:
+            dest.unlink(missing_ok=True)
+            return False
+    return True
+
+
 def _process_video(src: Path, stem: str) -> dict:
     if not has_ffmpeg():
         raise RuntimeError("ffmpeg is not installed, cannot make a video poster frame")
@@ -217,6 +257,7 @@ def _process_video(src: Path, stem: str) -> dict:
         _save_jpeg(img, settings.thumbs_dir / thumb_name, THUMB_PX, 78)
         _save_jpeg(img, settings.display_dir / display_name, DISPLAY_PX, 86)
     poster.unlink(missing_ok=True)
+    make_silent_copy(src, stem)
 
     return {
         "width": width,

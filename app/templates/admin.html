@@ -53,6 +53,24 @@
   .kpi { display: flex; gap: 22px; flex-wrap: wrap; padding: 18px 0 4px; }
   .kpi div b { display: block; font-family: var(--serif); font-size: 24px; font-weight: 400; }
   .kpi div span { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; opacity: .5; }
+  .roster { width: 100%; border-collapse: collapse; font-size: 14px; background: #fff;
+            border-radius: 10px; overflow: hidden; }
+  .roster th { text-align: left; font-size: 10.5px; letter-spacing: .13em;
+               text-transform: uppercase; opacity: .5; padding: 9px 12px;
+               border-bottom: 1px solid rgba(0,0,0,.09); font-weight: 600; }
+  .roster td { padding: 7px 12px; border-bottom: 1px solid rgba(0,0,0,.05); }
+  .roster tr:last-child td { border-bottom: 0; }
+  .roster input { font: inherit; font-size: 14px; padding: 5px 8px; width: 100%;
+                  border: 1px solid transparent; border-radius: 6px; background: transparent; }
+  .roster input:hover { border-color: rgba(0,0,0,.12); }
+  .roster input:focus { border-color: var(--accent); background: #fff; outline: none; }
+  .roster .up { font-variant-numeric: tabular-nums; opacity: .6; text-align: right; }
+  .roster .act button { font: inherit; font-size: 12px; padding: 4px 9px; border-radius: 6px;
+                        border: 1px solid rgba(0,0,0,.12); background: #fff; cursor: pointer; }
+  .roster .act button:hover { background: #fbe9e6; color: #b3402f; }
+  .tablepill { display: inline-block; background: #fff; border: 1px solid rgba(0,0,0,.09);
+               border-radius: 999px; padding: 5px 13px; margin: 0 6px 6px 0; font-size: 13px; }
+  .tablepill b { font-family: var(--serif); font-weight: 400; }
 </style>
 {% endblock %}
 
@@ -83,6 +101,51 @@
     <details>
       <summary style="cursor:pointer;font-size:14px;opacity:.7">Guest notes</summary>
       <div id="notes" style="max-width:640px;margin-top:14px"></div>
+    </details>
+
+    <details id="seatingPanel" style="margin-top:10px">
+      <summary style="cursor:pointer;font-size:14px;opacity:.7">
+        Seating chart <span id="seatCount" style="opacity:.6"></span>
+      </summary>
+
+      <div class="card" style="margin-top:14px;max-width:900px">
+        <p style="margin:0 0 14px;font-size:14px;opacity:.75;line-height:1.55">
+          Upload your seating spreadsheet as CSV. It needs a <b>name</b> column;
+          a <b>table</b> column is what makes the table show up next to each photo.
+          <b>seat</b>, <b>side</b> and <b>notes</b> are optional. Headers are matched
+          loosely, and a file with no header is read as name, table.
+        </p>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <input type="file" id="csvFile" accept=".csv,text/csv,text/plain">
+          <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+            <input type="radio" name="importMode" value="merge" checked> merge
+          </label>
+          <label style="font-size:13px;display:flex;align-items:center;gap:6px">
+            <input type="radio" name="importMode" value="replace"> replace all
+          </label>
+          <button class="btn small" id="csvImport">Import</button>
+          <a class="btn small ghost" href="/api/admin/guests.csv">Export CSV</a>
+        </div>
+        <div id="importResult" style="margin-top:12px;font-size:13.5px"></div>
+      </div>
+
+      <div class="card" style="margin-top:10px;max-width:900px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <label class="field" style="flex:2;min-width:170px;margin:0">
+            <span>Add a guest</span>
+            <input type="text" id="newGuestName" placeholder="Name">
+          </label>
+          <label class="field" style="flex:1;min-width:110px;margin:0">
+            <span>Table</span>
+            <input type="text" id="newGuestTable" placeholder="4">
+          </label>
+          <button class="btn small" id="addGuest" style="margin-bottom:1px">Add</button>
+        </div>
+      </div>
+
+      <div id="tableSummary" style="margin:16px 0 8px"></div>
+      <div id="roster" style="max-width:900px"></div>
     </details>
   </div>
 

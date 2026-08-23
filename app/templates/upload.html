@@ -14,10 +14,15 @@
   </p>
 
   <div class="card">
-    <label class="field">
+    <label class="field namefield">
       <span>Your name</span>
       <input type="text" id="guestName" placeholder="So we know who to thank"
-             autocomplete="name" enterkeyhint="done">
+             autocomplete="off" autocapitalize="words" autocorrect="off"
+             spellcheck="false" enterkeyhint="done"
+             role="combobox" aria-autocomplete="list" aria-expanded="false"
+             aria-controls="nameMatches">
+      <div class="matches" id="nameMatches" role="listbox"></div>
+      <div class="seated" id="seated"></div>
     </label>
 
     <div class="btn-row">

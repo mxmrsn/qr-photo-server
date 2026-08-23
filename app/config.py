@@ -98,8 +98,19 @@ class Settings:
     # "all"       : nothing is public until approved
     moderation = _str("MODERATION", "off").lower()
     allow_guest_gallery = _bool("ALLOW_GUEST_GALLERY", True)
+    # Lets the upload page offer name-search against the seating chart. Turning
+    # it off hides the roster from anyone holding the URL; guests then type
+    # their name as free text and lose the automatic table.
+    guest_list_public = _bool("GUEST_LIST_PUBLIC", True)
     allow_guest_download = _bool("ALLOW_GUEST_DOWNLOAD", False)
     slideshow_seconds = _int("SLIDESHOW_SECONDS", 7)
+
+    # Videos play muted on the projector, so their speech is transcribed
+    # locally and shown as subtitles. Needs faster-whisper installed; without
+    # it everything still works, just without captions.
+    transcribe_video = _bool("TRANSCRIBE_VIDEO", True)
+    whisper_model = _str("WHISPER_MODEL", "base")     # tiny|base|small|medium
+    whisper_language = _str("WHISPER_LANGUAGE", "")   # blank = auto-detect
     slideshow_max_video_seconds = _int("SLIDESHOW_MAX_VIDEO_SECONDS", 25)
 
     admin_password = _str("ADMIN_PASSWORD", "")

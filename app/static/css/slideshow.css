@@ -50,13 +50,38 @@ body.show-cursor { cursor: default; }
 
 .caption {
   position: fixed; left: 0; right: 0; bottom: 0;
-  /* Right padding keeps the text clear of the QR card in the corner. */
-  padding: 130px max(5vw, 300px) 4.2vh 5vw;
+  padding: 130px 5vw 4.2vh;
   background: linear-gradient(transparent, rgba(0,0,0,.78));
   pointer-events: none;
   transition: opacity .5s;
 }
 .caption.hide { opacity: 0; }
+
+/* Subtitles and attribution share one bottom stack, so no matter how long a
+   guest's note is the two can never overlap. */
+.caption .subs {
+  text-align: center;
+  margin: 0 auto 22px;
+  max-width: 22em;
+  min-height: 0;
+}
+.caption .subs:empty { display: none; }
+
+.caption .subs span {
+  display: inline-block;
+  background: rgba(0, 0, 0, .62);
+  padding: 10px 22px;
+  border-radius: 10px;
+  font-size: clamp(19px, 2.1vw, 36px);
+  line-height: 1.32;
+  letter-spacing: .005em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, .9);
+  backdrop-filter: blur(3px);
+}
+
+/* Only the attribution sits low enough to collide with the QR card, so only it
+   gets the extra right margin. Subtitles stay centred on the full screen. */
+.caption .attrib { padding-right: max(0px, calc(300px - 5vw)); }
 
 .caption .msg {
   font-family: "Iowan Old Style", Palatino, Georgia, serif;
@@ -129,5 +154,5 @@ body.show-cursor .help { opacity: .45; }
 @media (max-aspect-ratio: 1/1), (max-width: 720px) {
   .promo { right: 50%; transform: translateX(50%); bottom: auto; top: 3vh; padding: 9px 15px 9px 9px; }
   .promo img { width: 52px; }
-  .caption { padding-right: 5vw; }
+  .caption .attrib { padding-right: 0; }
 }

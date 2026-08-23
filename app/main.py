@@ -30,7 +30,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import db, media
+from . import db, guests, media, transcribe
 from .config import ROOT, settings
 
 # --------------------------------------------------------------------------
@@ -113,7 +113,7 @@ def rate_limit(ip: str, limit: int, window: float = 3600.0) -> bool:
 # Background processing queue
 # --------------------------------------------------------------------------
 
-_queue: asyncio.Queue[str] | None = None
+_queue: asyncio.Queue[tuple[str, str]] | None = None
 _workers: list[asyncio.Task] = []
 
 
@@ -157,23 +157,72 @@ def _process_one(media_id: str) -> None:
     )
 
 
+def _silence_one(media_id: str) -> None:
+    """Build the audio-free copy for a video that predates this feature."""
+    row = db.query_one("SELECT * FROM media WHERE id = ?", (media_id,))
+    if row is None or row["kind"] != "video":
+        return
+    src = settings.originals_dir / row["stored_name"]
+    if not src.exists() or media.silent_path(media_id).exists():
+        return
+    if media.make_silent_copy(src, media_id):
+        print(f"[silence] {media_id}: audio stripped for playback")
+    else:
+        print(f"[silence] {media_id}: could not strip audio, player stays muted")
+
+
+def _transcribe_one(media_id: str) -> None:
+    """Runs in a worker thread, after the video is already on screen.
+
+    Deliberately a separate stage: a guest's clip should reach the projector as
+    soon as its poster frame exists, and gain captions a moment later, rather
+    than waiting on speech recognition before anyone can see it.
+    """
+    row = db.query_one("SELECT * FROM media WHERE id = ?", (media_id,))
+    if row is None or row["kind"] != "video":
+        return
+    src = settings.originals_dir / row["stored_name"]
+    if not src.exists():
+        return
+    try:
+        segments = transcribe.transcribe(src)
+    except Exception as exc:  # noqa: BLE001 - captions are never worth failing over
+        print(f"[transcribe] {media_id}: {exc}")
+        return
+    db.execute("UPDATE media SET transcript = ? WHERE id = ?",
+               (transcribe.to_json(segments), media_id))
+    if segments:
+        print(f"[transcribe] {media_id}: {len(segments)} caption segment(s)")
+
+
 async def _worker(name: str) -> None:
     assert _queue is not None
     while True:
-        media_id = await _queue.get()
+        job, media_id = await _queue.get()
         try:
-            await asyncio.to_thread(_process_one, media_id)
+            if job == "derive":
+                await asyncio.to_thread(_process_one, media_id)
+                # Video that landed successfully gets queued for captions.
+                row = db.query_one(
+                    "SELECT kind, status FROM media WHERE id = ?", (media_id,))
+                if (row and row["kind"] == "video" and row["status"] == "ready"
+                        and transcribe.available()):
+                    await _queue.put(("transcribe", media_id))
+            elif job == "transcribe":
+                await asyncio.to_thread(_transcribe_one, media_id)
+            elif job == "silence":
+                await asyncio.to_thread(_silence_one, media_id)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
-            print(f"[{name}] unexpected failure on {media_id}: {exc}")
+            print(f"[{name}] unexpected failure on {job} {media_id}: {exc}")
         finally:
             _queue.task_done()
 
 
-async def enqueue(media_id: str) -> None:
+async def enqueue(media_id: str, job: str = "derive") -> None:
     if _queue is not None:
-        await _queue.put(media_id)
+        await _queue.put((job, media_id))
 
 
 # --------------------------------------------------------------------------
@@ -199,7 +248,19 @@ async def _startup() -> None:
     # Anything left mid-flight by a restart goes back in the queue.
     stuck = db.query("SELECT id FROM media WHERE status='processing'")
     for row in stuck:
-        await _queue.put(row["id"])
+        await _queue.put(("derive", row["id"]))
+    # Videos uploaded before the audio-strip existed.
+    for row in db.query("SELECT id FROM media WHERE kind='video' AND status='ready'"):
+        if not media.silent_path(row["id"]).exists():
+            await _queue.put(("silence", row["id"]))
+
+    # Videos that never got captions (added later, or a restart mid-job).
+    if transcribe.available():
+        for row in db.query(
+            "SELECT id FROM media WHERE kind='video' AND status='ready' "
+            "AND transcript IS NULL"
+        ):
+            await _queue.put(("transcribe", row["id"]))
 
     banner = [
         "",
@@ -211,6 +272,8 @@ async def _startup() -> None:
         f"   Slideshow    : {settings.base_url}/slideshow",
         f"   Admin        : {settings.base_url}/admin",
         f"   Admin password: {ADMIN_PASSWORD}",
+        f"   Captions     : "
+        f"{'on (' + settings.whisper_model + ')' if transcribe.available() else 'off'}",
         f"   Moderation   : {settings.moderation}   |  ffmpeg: "
         f"{'yes' if media.has_ffmpeg() else 'NO (videos will fail)'}",
         f"   Requeued {len(stuck)} unfinished upload(s)" if stuck else "",
@@ -271,6 +334,23 @@ async def slideshow(request: Request):
 CHUNK = 1024 * 1024
 
 
+def resolve_guest(guest_id: str, guest_name: str, table_id: str) -> tuple[int | None, str, str]:
+    """A roster pick wins over typed text; typed text still works on its own.
+
+    The name and table are copied onto the item rather than only referenced, so
+    attribution survives a sync to an instance that has no seating chart.
+    """
+    if guest_id:
+        try:
+            record = guests.by_id(int(guest_id))
+        except (TypeError, ValueError):
+            record = None
+        if record:
+            return (record["id"], record["name"],
+                    record["table_name"] or table_id.strip()[:40])
+    return None, guest_name.strip()[:80], table_id.strip()[:40]
+
+
 @app.post("/api/upload")
 async def api_upload(
     request: Request,
@@ -278,6 +358,7 @@ async def api_upload(
     guest_name: str = Form(""),
     message: str = Form(""),
     table_id: str = Form(""),
+    guest_id: str = Form(""),
 ):
     ip = client_ip(request)
     if not rate_limit(ip, settings.upload_rate_per_hour):
@@ -328,6 +409,7 @@ async def api_upload(
         dest.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="That file came through empty.")
 
+    resolved_id, resolved_name, resolved_table = resolve_guest(guest_id, guest_name, table_id)
     digest = hasher.hexdigest()
 
     # Same bytes already here? Someone double-tapped, or is re-uploading their
@@ -342,15 +424,15 @@ async def api_upload(
         """
         INSERT INTO media (id, stored_name, original_name, kind, mime, bytes,
                            guest_name, message, table_id, uploaded_at, status,
-                           approved, uploader_ip, sha256, source)
-        VALUES (?,?,?,?,?,?,?,?,?,?,'processing',1,?,?,?)
+                           approved, uploader_ip, sha256, source, guest_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,'processing',1,?,?,?,?)
         """,
         (
             media_id, stored_name, media.clean_display_name(file.filename), kind,
             (file.content_type or "")[:100], written,
-            guest_name.strip()[:80] or None, message.strip()[:500] or None,
-            table_id.strip()[:40] or None, time.time(), ip, digest,
-            "post" if settings.post_event else "venue",
+            resolved_name or None, message.strip()[:500] or None,
+            resolved_table or None, time.time(), ip, digest,
+            "post" if settings.post_event else "venue", resolved_id,
         ),
     )
     await enqueue(media_id)
@@ -478,6 +560,10 @@ async def api_slideshow(after: int = 0, before: int = 0, limit: int = 300):
         item = _public_fields(r)
         item["fresh"] = (now - (r["uploaded_at"] or 0)) < 180
         item["featured"] = bool(r["featured"])
+        if r["kind"] == "video":
+            item["captions"] = transcribe.from_json(r["transcript"])
+            item["video"] = f"/m/{r['id']}/silent.mp4"
+            item["silent"] = media.silent_path(r["id"]).exists()
         items.append(item)
     head = db.query_one(f"SELECT MAX(seq) AS m FROM media WHERE {db.visible_clause('slideshow')}")
     return {"items": items, "head": (head["m"] if head and head["m"] else 0)}
@@ -568,6 +654,26 @@ async def serve_video(request: Request, media_id: str):
     return FileResponse(path, media_type=mime, headers={"Cache-Control": "public, max-age=86400"})
 
 
+@app.get("/m/{media_id}/silent.mp4")
+async def serve_silent(request: Request, media_id: str):
+    """Video with the audio track removed — what the projector plays."""
+    row = _row_or_404(media_id)
+    _guard_visibility(request, row)
+    if row["kind"] != "video":
+        raise HTTPException(status_code=404, detail="Not a video")
+    path = media.silent_path(media_id)
+    if not path.exists():
+        # Not built yet (or a restart caught it mid-flight). The player is
+        # muted regardless, so falling back is safe rather than showing nothing.
+        path = settings.originals_dir / row["stored_name"]
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="Not found")
+        return FileResponse(path, media_type=row["mime"] or "video/mp4",
+                            headers={"Cache-Control": "public, max-age=86400"})
+    return FileResponse(path, media_type="video/mp4",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
 @app.get("/m/{media_id}/original")
 async def serve_original(request: Request, media_id: str):
     row = _row_or_404(media_id)
@@ -577,6 +683,143 @@ async def serve_original(request: Request, media_id: str):
     path = settings.originals_dir / row["stored_name"]
     mime = row["mime"] or mimetypes.guess_type(row["stored_name"])[0] or "application/octet-stream"
     return _serve(path, mime, filename=row["original_name"] or row["stored_name"])
+
+
+# --------------------------------------------------------------------------
+# The seating chart
+# --------------------------------------------------------------------------
+
+@app.get("/api/guests")
+async def api_guests(request: Request, q: str = ""):
+    """Typeahead for the upload page."""
+    if not settings.guest_list_public and not is_admin(request):
+        return {"items": [], "enabled": False}
+    query = q.strip()
+    if len(query) < 1:
+        return {"items": [], "enabled": True}
+    return {"items": guests.search(query, limit=12), "enabled": True}
+
+
+@app.get("/api/guests/enabled")
+async def api_guests_enabled(request: Request):
+    """Does this event have a seating chart worth searching?"""
+    if not settings.guest_list_public and not is_admin(request):
+        return {"enabled": False, "count": 0}
+    row = db.query_one("SELECT COUNT(*) n FROM guests")
+    return {"enabled": True, "count": row["n"] if row else 0}
+
+
+@app.get("/api/admin/guests")
+async def admin_guests(request: Request):
+    require_admin(request)
+    roster = guests.all_guests()
+    tables: dict[str, int] = {}
+    for g in roster:
+        key = g["table_name"] or "(no table)"
+        tables[key] = tables.get(key, 0) + 1
+    return {"items": roster, "tables": tables, "count": len(roster)}
+
+
+@app.get("/api/admin/guests.csv")
+async def admin_guests_csv(request: Request):
+    require_admin(request)
+    return StreamingResponse(
+        io.BytesIO(guests.to_csv().encode("utf-8")),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="seating-chart.csv"'},
+    )
+
+
+@app.post("/api/admin/guests/import")
+async def admin_guests_import(
+    request: Request,
+    file: UploadFile,
+    mode: str = Form("merge"),
+):
+    """Take a seating spreadsheet. 'merge' updates by name, 'replace' starts over."""
+    require_admin(request)
+    raw = await file.read()
+    await file.close()
+    if len(raw) > 4 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="That CSV is suspiciously large.")
+    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise HTTPException(status_code=400, detail="Could not read that file as text.")
+
+    rows, warnings = guests.parse_csv(text)
+    if not rows:
+        raise HTTPException(status_code=400, detail=" ".join(warnings) or "Nothing to import.")
+
+    if mode == "replace":
+        total = guests.replace_all(rows)
+        result = {"replaced": total, "added": total, "updated": 0}
+    else:
+        added, updated = guests.merge(rows)
+        result = {"added": added, "updated": updated}
+
+    # Re-link any uploads whose typed name now matches someone on the chart.
+    linked = 0
+    for row in db.query(
+        "SELECT id, guest_name FROM media "
+        "WHERE guest_id IS NULL AND guest_name IS NOT NULL AND guest_name != ''"
+    ):
+        match = guests.by_name(row["guest_name"])
+        if match:
+            db.execute(
+                "UPDATE media SET guest_id = ?, table_id = COALESCE(?, table_id) WHERE id = ?",
+                (match["id"], match["table_name"], row["id"]),
+            )
+            linked += 1
+
+    return {"ok": True, **result, "linked_existing_uploads": linked,
+            "warnings": warnings[:10]}
+
+
+@app.post("/api/admin/guests/edit")
+async def admin_guests_edit(request: Request):
+    require_admin(request)
+    body = await request.json()
+    action = body.get("action")
+
+    if action == "delete":
+        db.execute("DELETE FROM guests WHERE id = ?", (body.get("id"),))
+        db.execute("UPDATE media SET guest_id = NULL WHERE guest_id = ?", (body.get("id"),))
+        return {"ok": True}
+
+    name = guests.tidy(str(body.get("name") or ""))[:120]
+    if not name:
+        raise HTTPException(status_code=400, detail="A guest needs a name.")
+    table = guests.tidy(str(body.get("table_name") or ""))[:60] or None
+    seat = guests.tidy(str(body.get("seat") or ""))[:20] or None
+    side = guests.tidy(str(body.get("side") or ""))[:60] or None
+
+    if action == "add":
+        if guests.by_name(name):
+            raise HTTPException(status_code=409, detail=f"{name} is already on the list.")
+        db.execute(
+            "INSERT INTO guests (name, table_name, seat, side, created_at) VALUES (?,?,?,?,?)",
+            (name, table, seat, side, time.time()),
+        )
+        return {"ok": True}
+
+    if action == "update":
+        db.execute(
+            "UPDATE guests SET name=?, table_name=?, seat=?, side=? WHERE id=?",
+            (name, table, seat, side, body.get("id")),
+        )
+        # Keep already-uploaded photos in step with a corrected table.
+        db.execute(
+            "UPDATE media SET guest_name = ?, table_id = ? WHERE guest_id = ?",
+            (name, table, body.get("id")),
+        )
+        return {"ok": True}
+
+    raise HTTPException(status_code=400, detail=f"Unknown action '{action}'")
 
 
 # --------------------------------------------------------------------------
@@ -686,6 +929,7 @@ async def admin_media(request: Request, limit: int = 120, before: int = 0, filte
             "hidden": bool(r["hidden"]), "featured": bool(r["featured"]),
             "bytes": r["bytes"], "original_name": r["original_name"],
             "error": r["error"], "original": f"/m/{r['id']}/original",
+            "captions": transcribe.from_json(r["transcript"]),
         })
         items.append(item)
     return {"items": items, "stats": db.counts()}
@@ -717,6 +961,18 @@ async def admin_action(request: Request):
                 (settings.display_dir / r["display_name"]).unlink(missing_ok=True)
         db.execute(f"DELETE FROM media WHERE id IN ({placeholders})", ids)
         return {"ok": True, "deleted": len(rows)}
+
+    if action == "clear-captions":
+        db.execute(
+            f"UPDATE media SET transcript = '[]' WHERE id IN ({placeholders})", ids)
+        return {"ok": True, "cleared": len(ids)}
+
+    if action == "recaption":
+        db.execute(
+            f"UPDATE media SET transcript = NULL WHERE id IN ({placeholders})", ids)
+        for media_id in ids:
+            await enqueue(media_id, "transcribe")
+        return {"ok": True, "requeued": len(ids)}
 
     if action == "reprocess":
         db.execute(

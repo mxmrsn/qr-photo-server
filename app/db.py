@@ -42,11 +42,24 @@ CREATE TABLE IF NOT EXISTS media (
     uploader_ip   TEXT,
     error         TEXT,
     sha256        TEXT,                       -- dedupe key, also survives sync
-    source        TEXT NOT NULL DEFAULT 'venue'  -- 'venue' | 'post' | 'import'
+    source        TEXT NOT NULL DEFAULT 'venue', -- 'venue' | 'post' | 'import'
+    transcript    TEXT                        -- JSON [{start,end,text}] for videos
 );
 CREATE INDEX IF NOT EXISTS idx_media_uploaded ON media(uploaded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_media_visible  ON media(hidden, approved, status);
 CREATE INDEX IF NOT EXISTS idx_media_table    ON media(table_id);
+
+CREATE TABLE IF NOT EXISTS guests (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,              -- as printed on the place card
+    table_name  TEXT,                       -- "4", "Head Table", "Willow"
+    seat        TEXT,
+    side        TEXT,                       -- optional: whose family
+    notes       TEXT,
+    created_at  REAL NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_guests_name ON guests(name COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_guests_table ON guests(table_name);
 
 CREATE TABLE IF NOT EXISTS guestbook (
     seq         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,6 +103,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     for column, ddl in (
         ("sha256", "ALTER TABLE media ADD COLUMN sha256 TEXT"),
         ("source", "ALTER TABLE media ADD COLUMN source TEXT NOT NULL DEFAULT 'venue'"),
+        ("transcript", "ALTER TABLE media ADD COLUMN transcript TEXT"),
+        ("guest_id", "ALTER TABLE media ADD COLUMN guest_id INTEGER"),
     ):
         if column not in have:
             conn.execute(ddl)
@@ -97,6 +112,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_media_sha "
         "ON media(sha256) WHERE sha256 IS NOT NULL"
     )
+    have_gb = {row["name"] for row in conn.execute("PRAGMA table_info(guestbook)")}
+    if "guest_id" not in have_gb:
+        conn.execute("ALTER TABLE guestbook ADD COLUMN guest_id INTEGER")
 
 
 def query(sql: str, params: Iterable[Any] = ()) -> list[sqlite3.Row]:
@@ -157,4 +175,7 @@ def counts() -> dict:
     out = {k: (row[k] or 0) for k in row.keys()} if row else {}
     gb = query_one("SELECT COUNT(*) AS n FROM guestbook WHERE hidden = 0")
     out["notes"] = gb["n"] if gb else 0
+    roster = query_one("SELECT COUNT(*) AS n, COUNT(DISTINCT table_name) AS t FROM guests")
+    out["roster"] = roster["n"] if roster else 0
+    out["tables"] = roster["t"] if roster else 0
     return out

@@ -223,3 +223,133 @@
       .catch(function () {});
   }, 15000);
 })();
+
+/* ------------------------------------------------------------ seating chart
+   Kept in a collapsed panel: it matters a lot the week before and not at all
+   during the reception, which is when this page is actually open. */
+
+(function () {
+  var panel = document.getElementById('seatingPanel');
+  if (!panel) return;
+
+  var rosterEl = document.getElementById('roster');
+  var summaryEl = document.getElementById('tableSummary');
+  var countEl = document.getElementById('seatCount');
+  var resultEl = document.getElementById('importResult');
+  var loaded = false;
+
+  function tableLabelOf(t) {
+    if (!t) return '—';
+    return /^\d+$/.test(t) ? 'Table ' + t : t;
+  }
+
+  function load() {
+    getJSON('/api/admin/guests').then(function (d) {
+      loaded = true;
+      countEl.textContent = d.count ? '· ' + d.count + ' guests' : '· empty';
+
+      var names = Object.keys(d.tables).sort(function (a, b) {
+        var na = parseInt(a, 10), nb = parseInt(b, 10);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        if (!isNaN(na)) return -1;
+        if (!isNaN(nb)) return 1;
+        return a.localeCompare(b);
+      });
+      summaryEl.innerHTML = names.length
+        ? names.map(function (t) {
+            return '<span class="tablepill"><b>' + esc(tableLabelOf(t)) + '</b> · ' +
+                   d.tables[t] + '</span>';
+          }).join('')
+        : '';
+
+      if (!d.items.length) {
+        rosterEl.innerHTML = '<p style="opacity:.55;font-size:14px">' +
+          'No seating chart yet — import a CSV above.</p>';
+        return;
+      }
+
+      var html = '<table class="roster"><thead><tr>' +
+        '<th>Name</th><th style="width:140px">Table</th><th style="width:90px">Seat</th>' +
+        '<th style="width:130px">Side</th><th style="width:80px" class="up">Uploads</th>' +
+        '<th style="width:70px"></th></tr></thead><tbody>';
+      d.items.forEach(function (g) {
+        html += '<tr data-id="' + g.id + '">' +
+          '<td><input data-f="name" value="' + esc(g.name) + '"></td>' +
+          '<td><input data-f="table_name" value="' + esc(g.table_name || '') + '"></td>' +
+          '<td><input data-f="seat" value="' + esc(g.seat || '') + '"></td>' +
+          '<td><input data-f="side" value="' + esc(g.side || '') + '"></td>' +
+          '<td class="up">' + (g.uploads || 0) + '</td>' +
+          '<td class="act"><button data-del="' + g.id + '">Remove</button></td>' +
+          '</tr>';
+      });
+      rosterEl.innerHTML = html + '</tbody></table>';
+    }).catch(function (err) { toast(err.message); });
+  }
+
+  // Edits save when a field loses focus — no save button to forget.
+  rosterEl.addEventListener('change', function (e) {
+    var input = e.target.closest('input[data-f]');
+    if (!input) return;
+    var tr = input.closest('tr');
+    var payload = { action: 'update', id: Number(tr.dataset.id) };
+    tr.querySelectorAll('input[data-f]').forEach(function (i) {
+      payload[i.dataset.f] = i.value;
+    });
+    postJSON('/api/admin/guests/edit', payload)
+      .then(function () { toast('Saved'); })
+      .catch(function (err) { toast(err.message); load(); });
+  });
+
+  rosterEl.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-del]');
+    if (!btn) return;
+    if (!confirm('Remove this guest from the seating chart? Their photos stay.')) return;
+    postJSON('/api/admin/guests/edit', { action: 'delete', id: Number(btn.dataset.del) })
+      .then(load).catch(function (err) { toast(err.message); });
+  });
+
+  document.getElementById('addGuest').addEventListener('click', function () {
+    var name = document.getElementById('newGuestName');
+    var table = document.getElementById('newGuestTable');
+    if (!name.value.trim()) { toast('Needs a name'); return; }
+    postJSON('/api/admin/guests/edit',
+             { action: 'add', name: name.value, table_name: table.value })
+      .then(function () { name.value = ''; table.value = ''; load(); })
+      .catch(function (err) { toast(err.message); });
+  });
+
+  document.getElementById('csvImport').addEventListener('click', function () {
+    var input = document.getElementById('csvFile');
+    if (!input.files.length) { toast('Choose a CSV first'); return; }
+    var mode = document.querySelector('input[name=importMode]:checked').value;
+    if (mode === 'replace' &&
+        !confirm('Replace the whole seating chart with this file?')) return;
+
+    var form = new FormData();
+    form.append('file', input.files[0]);
+    form.append('mode', mode);
+    resultEl.innerHTML = 'Importing…';
+    fetch('/api/admin/guests/import', { method: 'POST', body: form, credentials: 'same-origin' })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error); return j; }); })
+      .then(function (j) {
+        var bits = [];
+        if (j.added) bits.push(j.added + ' added');
+        if (j.updated) bits.push(j.updated + ' updated');
+        if (j.linked_existing_uploads) {
+          bits.push(j.linked_existing_uploads + ' existing upload(s) matched to a guest');
+        }
+        resultEl.innerHTML = '<span style="color:#3f7d4e">✓ ' + esc(bits.join(', ')) + '</span>' +
+          (j.warnings && j.warnings.length
+            ? '<ul style="margin:8px 0 0;padding-left:18px;opacity:.7">' +
+              j.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>'
+            : '');
+        input.value = '';
+        load();
+      })
+      .catch(function (err) {
+        resultEl.innerHTML = '<span style="color:#b3402f">' + esc(err.message) + '</span>';
+      });
+  });
+
+  panel.addEventListener('toggle', function () { if (panel.open && !loaded) load(); });
+})();

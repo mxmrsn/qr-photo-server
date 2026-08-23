@@ -9,6 +9,8 @@
 
   var els = {
     name: document.getElementById('guestName'),
+    matches: document.getElementById('nameMatches'),
+    seated: document.getElementById('seated'),
     pickBtn: document.getElementById('pickBtn'),
     cameraBtn: document.getElementById('cameraBtn'),
     filePick: document.getElementById('filePick'),
@@ -26,16 +28,126 @@
   var uploadedIds = [];
   var counter = 0;
 
-  /* ---------------------------------------------------------- name memory */
+  /* ------------------------------------------- name, and the seating chart */
+
+  var SEAT_KEY = 'wedding_guest_seat';
+  var picked = null;          // {id, name, table_name} once chosen from the chart
+  var rosterExists = false;
+
+  function remember() {
+    try {
+      localStorage.setItem(NAME_KEY, els.name.value.trim());
+      if (picked) localStorage.setItem(SEAT_KEY, JSON.stringify(picked));
+      else localStorage.removeItem(SEAT_KEY);
+    } catch (e) { /* private browsing */ }
+  }
 
   try {
     var saved = localStorage.getItem(NAME_KEY);
     if (saved) els.name.value = saved;
+    var seat = localStorage.getItem(SEAT_KEY);
+    if (seat) { picked = JSON.parse(seat); showSeat(); }
   } catch (e) { /* private browsing */ }
 
-  els.name.addEventListener('change', function () {
-    try { localStorage.setItem(NAME_KEY, els.name.value.trim()); } catch (e) {}
+  els.name.addEventListener('change', remember);
+
+  function showSeat() {
+    if (!picked) { els.seated.classList.remove('show'); return; }
+    var where = picked.table_name
+      ? (/^\d+$/.test(picked.table_name) ? 'Table ' + picked.table_name : picked.table_name)
+      : null;
+    els.seated.innerHTML = where
+      ? '<b>' + esc(where) + '</b><a id="notMe">not you?</a>'
+      : '<b>' + esc(picked.name) + '</b><a id="notMe">not you?</a>';
+    els.seated.classList.add('show');
+    var undo = document.getElementById('notMe');
+    if (undo) undo.addEventListener('click', function () {
+      picked = null;
+      els.seated.classList.remove('show');
+      remember();
+      els.name.focus();
+    });
+  }
+
+  function closeMatches() {
+    els.matches.classList.remove('open');
+    els.matches.innerHTML = '';
+    els.name.setAttribute('aria-expanded', 'false');
+  }
+
+  function choose(g) {
+    picked = { id: g.id, name: g.name, table_name: g.table_name };
+    els.name.value = g.name;
+    closeMatches();
+    showSeat();
+    remember();
+  }
+
+  function renderMatches(list, query) {
+    if (!list.length) {
+      // Not everyone is on the chart — a plus-one shouldn't hit a dead end.
+      els.matches.innerHTML =
+        '<div class="none">No match on the seating chart — that\'s fine, ' +
+        'just leave your name as you typed it.</div>';
+      els.matches.classList.add('open');
+      return;
+    }
+    els.matches.innerHTML = '';
+    list.forEach(function (g) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'option');
+      var where = g.table_name
+        ? (/^\d+$/.test(g.table_name) ? 'Table ' + g.table_name : g.table_name)
+        : '';
+      b.innerHTML = '<span>' + esc(g.name) + '</span>' +
+                    (where ? '<span class="tbl">' + esc(where) + '</span>' : '');
+      b.addEventListener('click', function () { choose(g); });
+      els.matches.appendChild(b);
+    });
+    els.matches.classList.add('open');
+    els.name.setAttribute('aria-expanded', 'true');
+  }
+
+  var lookupTimer = null;
+  var lastQuery = '';
+
+  function lookup() {
+    var q = els.name.value.trim();
+    if (picked && q !== picked.name) { picked = null; els.seated.classList.remove('show'); }
+    if (!rosterExists || q.length < 2) { closeMatches(); return; }
+    if (q === lastQuery) return;
+    lastQuery = q;
+    getJSON('/api/guests?q=' + encodeURIComponent(q))
+      .then(function (d) {
+        if (els.name.value.trim() !== q) return;   // typed on since
+        renderMatches(d.items || [], q);
+      })
+      .catch(function () { closeMatches(); });
+  }
+
+  els.name.addEventListener('input', function () {
+    clearTimeout(lookupTimer);
+    lookupTimer = setTimeout(lookup, 160);
   });
+  els.name.addEventListener('focus', lookup);
+  els.name.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeMatches();
+    if (e.key === 'Enter') { closeMatches(); els.name.blur(); }
+  });
+  document.addEventListener('click', function (e) {
+    if (!els.matches.contains(e.target) && e.target !== els.name) closeMatches();
+  });
+
+  // Only offer the search if there's actually a chart loaded.
+  getJSON('/api/guests/enabled')
+    .then(function (d) {
+      rosterExists = !!(d.enabled && d.count > 0);
+      if (rosterExists) {
+        els.name.placeholder = 'Start typing — we\'ll find your table';
+      }
+    })
+    .catch(function () {});
 
   /* ------------------------------------------------------- camera support */
 
@@ -201,7 +313,8 @@
     var form = new FormData();
     form.append('file', item.file, item.file.name || 'upload');
     form.append('guest_name', els.name.value.trim());
-    form.append('table_id', cfg.tableId || '');
+    form.append('table_id', (picked && picked.table_name) || cfg.tableId || '');
+    if (picked) form.append('guest_id', picked.id);
 
     var xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/upload', true);
@@ -279,7 +392,8 @@
     var form = new FormData();
     form.append('message', text);
     form.append('guest_name', els.name.value.trim());
-    form.append('table_id', cfg.tableId || '');
+    form.append('table_id', (picked && picked.table_name) || cfg.tableId || '');
+    if (picked) form.append('guest_id', picked.id);
     els.noteBtn.disabled = true;
     fetch('/api/note', { method: 'POST', body: form, credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
