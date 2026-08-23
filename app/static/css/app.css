@@ -242,6 +242,18 @@ textarea { resize: vertical; min-height: 74px; }
   max-width: 100%; max-height: 82vh; border-radius: 6px; display: block;
   box-shadow: 0 30px 80px -20px rgba(0,0,0,.8);
 }
+/* Subtitles inside the lightbox, sitting over the bottom of the video. */
+.lightbox .lbsubs {
+  position: absolute; left: 0; right: 0; bottom: 74px;
+  text-align: center; padding: 0 16px; pointer-events: none;
+}
+.lightbox .lbsubs:empty { display: none; }
+.lightbox .lbsubs span {
+  display: inline-block; background: rgba(0,0,0,.72); color: #fff;
+  padding: 7px 15px; border-radius: 8px; font-size: 15px; line-height: 1.35;
+  max-width: 34em; text-shadow: 0 1px 6px rgba(0,0,0,.8);
+}
+
 .lightbox .cap {
   color: #fff; text-align: center; margin-top: 14px; font-size: 14px; opacity: .8;
   font-family: var(--serif); font-style: italic;

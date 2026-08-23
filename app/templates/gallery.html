@@ -29,7 +29,7 @@
   <button class="nav prev" id="lbPrev" aria-label="Previous">&#8249;</button>
   <button class="nav next" id="lbNext" aria-label="Next">&#8250;</button>
   <div style="text-align:center;max-width:100%">
-    <div id="lbStage"></div>
+    <div id="lbStage" style="position:relative"></div>
     <div class="cap" id="lbCap"></div>
   </div>
 </div>
@@ -37,5 +37,5 @@
 
 {% block scripts %}
 <script>window.GALLERY = { allowDownload: {{ 'true' if s.allow_guest_download else 'false' }} };</script>
-<script src="/static/js/gallery.js"></script>
+<script src="/static/js/gallery.js?v={{ v }}"></script>
 {% endblock %}

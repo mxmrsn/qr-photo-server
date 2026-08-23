@@ -229,6 +229,24 @@ async def enqueue(media_id: str, job: str = "derive") -> None:
 # App
 # --------------------------------------------------------------------------
 
+def _asset_version() -> str:
+    """A token that changes whenever the CSS or JS does.
+
+    Static files are cached hard by browsers, and a guest whose phone is
+    holding yesterday's upload.js is a bug you cannot see and cannot debug
+    from here. Appending this to asset URLs means a changed file is simply a
+    different URL.
+    """
+    latest = 0.0
+    static = ROOT / "app" / "static"
+    for path in static.rglob("*"):
+        if path.suffix in {".js", ".css"} and path.is_file():
+            latest = max(latest, path.stat().st_mtime)
+    return str(int(latest))
+
+
+ASSET_VERSION = _asset_version()
+
 templates = Jinja2Templates(directory=str(ROOT / "app" / "templates"))
 app = FastAPI(title="Wedding Photo Server", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=str(ROOT / "app" / "static")), name="static")
@@ -295,6 +313,7 @@ def page(request: Request, template: str, **extra):
         "theme": settings.theme(),
         "is_admin": is_admin(request),
         "ffmpeg": media.has_ffmpeg(),
+        "v": ASSET_VERSION,
     }
     ctx.update(extra)
     return templates.TemplateResponse(request, template, ctx)
@@ -504,7 +523,11 @@ def _public_fields(row) -> dict:
         "uploaded_at": row["uploaded_at"],
         "thumb": f"/m/{row['id']}/thumb.jpg",
         "display": f"/m/{row['id']}/display.jpg",
-        "video": f"/m/{row['id']}/video" if row["kind"] == "video" else None,
+        # Always the audio-stripped rendition. There is no code path that
+        # serves a guest a video with sound in it.
+        "video": f"/m/{row['id']}/silent.mp4" if row["kind"] == "video" else None,
+        "captions": (transcribe.from_json(row["transcript"])
+                     if row["kind"] == "video" else None),
     }
 
 
@@ -561,8 +584,6 @@ async def api_slideshow(after: int = 0, before: int = 0, limit: int = 300):
         item["fresh"] = (now - (r["uploaded_at"] or 0)) < 180
         item["featured"] = bool(r["featured"])
         if r["kind"] == "video":
-            item["captions"] = transcribe.from_json(r["transcript"])
-            item["video"] = f"/m/{r['id']}/silent.mp4"
             item["silent"] = media.silent_path(r["id"]).exists()
         items.append(item)
     head = db.query_one(f"SELECT MAX(seq) AS m FROM media WHERE {db.visible_clause('slideshow')}")
@@ -640,20 +661,6 @@ async def serve_display(request: Request, media_id: str):
     return _serve(settings.display_dir / row["display_name"], "image/jpeg")
 
 
-@app.get("/m/{media_id}/video")
-async def serve_video(request: Request, media_id: str):
-    row = _row_or_404(media_id)
-    _guard_visibility(request, row)
-    if row["kind"] != "video":
-        raise HTTPException(status_code=404, detail="Not a video")
-    path = settings.originals_dir / row["stored_name"]
-    mime = row["mime"] or mimetypes.guess_type(row["stored_name"])[0] or "video/mp4"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Not found")
-    # FileResponse handles Range requests, which phones need for scrubbing.
-    return FileResponse(path, media_type=mime, headers={"Cache-Control": "public, max-age=86400"})
-
-
 @app.get("/m/{media_id}/silent.mp4")
 async def serve_silent(request: Request, media_id: str):
     """Video with the audio track removed — what the projector plays."""
@@ -672,6 +679,14 @@ async def serve_silent(request: Request, media_id: str):
                             headers={"Cache-Control": "public, max-age=86400"})
     return FileResponse(path, media_type="video/mp4",
                         headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/m/{media_id}/video")
+async def serve_video(request: Request, media_id: str):
+    """Kept as an alias. It serves the silent rendition too — there is no
+    public URL that hands out a video with its audio still attached. The
+    original, sound and all, is only reachable via /original."""
+    return await serve_silent(request, media_id)
 
 
 @app.get("/m/{media_id}/original")
@@ -929,7 +944,6 @@ async def admin_media(request: Request, limit: int = 120, before: int = 0, filte
             "hidden": bool(r["hidden"]), "featured": bool(r["featured"]),
             "bytes": r["bytes"], "original_name": r["original_name"],
             "error": r["error"], "original": f"/m/{r['id']}/original",
-            "captions": transcribe.from_json(r["transcript"]),
         })
         items.append(item)
     return {"items": items, "stats": db.counts()}

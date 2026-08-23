@@ -143,11 +143,15 @@
     lbStage.innerHTML = '';
     if (item.kind === 'video') {
       var video = document.createElement('video');
-      video.src = item.video;
-      video.controls = true;
+      video.src = item.video;       // server-side copy with the audio removed
+      video.muted = true;
+      video.defaultMuted = true;
+      video.volume = 0;
+      video.controls = true;        // scrubbing is still useful; there's no sound to unmute
       video.autoplay = true;
       video.playsInline = true;
       lbStage.appendChild(video);
+      attachCaptions(video, item.captions || []);
     } else {
       var img = document.createElement('img');
       img.src = item.display;
@@ -166,6 +170,27 @@
 
     lb.classList.add('open');
     document.body.style.overflow = 'hidden';
+  }
+
+  /* Videos are served without an audio track, so anything said in them is
+     shown as text instead — same treatment as the projector. */
+  function attachCaptions(video, cues) {
+    if (!cues.length) return;
+    var box = document.createElement('div');
+    box.className = 'lbsubs';
+    lbStage.appendChild(box);
+    var shown = null;
+    video.addEventListener('timeupdate', function () {
+      var t = video.currentTime, cue = null;
+      for (var i = 0; i < cues.length; i++) {
+        if (t >= cues[i].start - 0.15 && t <= cues[i].end + 0.35) { cue = cues[i]; break; }
+      }
+      var text = cue ? cue.text : '';
+      if (text !== shown) {
+        shown = text;
+        box.innerHTML = text ? '<span>' + esc(text) + '</span>' : '';
+      }
+    });
   }
 
   function closeLightbox() {

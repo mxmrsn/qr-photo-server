@@ -6,7 +6,7 @@
 <meta name="theme-color" content="{{ theme.paper }}">
 <title>{% block title %}{{ s.couple_names }}{% endblock %}</title>
 <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/css/app.css?v={{ v }}">
 <style>
   :root {
     --accent: {{ theme.accent }};
@@ -20,7 +20,7 @@
 <body>
 {% block body %}{% endblock %}
 <div class="toast" id="toast"></div>
-<script src="/static/js/common.js"></script>
+<script src="/static/js/common.js?v={{ v }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

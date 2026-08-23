@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ s.couple_names }}</title>
 <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/static/css/slideshow.css">
+<link rel="stylesheet" href="/static/css/slideshow.css?v={{ v }}">
 <style>:root { --accent: {{ theme.accent }}; }</style>
 </head>
 <body>
@@ -45,6 +45,6 @@
     maxVideo: {{ s.slideshow_max_video_seconds }}
   };
 </script>
-<script src="/static/js/slideshow.js"></script>
+<script src="/static/js/slideshow.js?v={{ v }}"></script>
 </body>
 </html>
