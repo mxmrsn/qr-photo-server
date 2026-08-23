@@ -276,6 +276,111 @@ tools/make_qr.py --wifi-ssid "Wedding" --wifi-password "loveislove"
 
 ---
 
+## Plan 6: your own router, with a real certificate
+
+*If you own a router and can put it at the venue, this is the best setup
+available — and it is the only local plan that gets you a working camera
+button.*
+
+The trick is **split-horizon DNS**: your domain resolves to the MacBook's local
+address at the venue, and to your cloud instance everywhere else. Same printed
+QR code, both worlds.
+
+### Why this beats a plain LAN
+
+A bare `http://192.168.1.154:8000` has three problems: no HTTPS (so no camera
+button), an address that changes, and nothing memorable to print. Pointing your
+own domain at the laptop fixes all three at once.
+
+### How it works
+
+1. **Get a certificate at home, by DNS challenge.** Let's Encrypt normally
+   proves you own a domain by connecting to it — impossible for a machine on a
+   private network. The DNS-01 challenge proves ownership by putting a record
+   in DNS instead, so it works for a server that is not publicly reachable at
+   all:
+
+   ```bash
+   brew install certbot
+   sudo certbot certonly --manual --preferred-challenges dns \
+        -d photos.yourdomain.com
+   ```
+
+   It prints a TXT record to add at your registrar. Add it, wait a minute,
+   press enter. You now hold a real certificate for a machine on your kitchen
+   table.
+
+   With Cloudflare as your DNS host this is fully automatic and renews itself:
+
+   ```bash
+   brew install certbot
+   pip install certbot-dns-cloudflare
+   sudo certbot certonly --dns-cloudflare \
+        --dns-cloudflare-credentials ~/.secrets/cloudflare.ini \
+        -d photos.yourdomain.com
+   ```
+
+2. **Point the domain at the laptop, on your router only.** In your router's
+   DNS settings add a host override:
+
+   ```
+   photos.yourdomain.com  ->  192.168.1.154
+   ```
+
+   Look for "Local DNS", "DNS host entries", "Static DNS", or "DNS rewrite".
+   OpenWrt, Asus, Ubiquiti, pfSense and AdGuard/Pi-hole all do this. Some cheap
+   ISP-supplied routers do not — check yours before relying on it.
+
+3. **Give the MacBook a fixed address**, by DHCP reservation on your own router.
+   You control the DHCP server now, so this is easy and reliable.
+
+4. **Serve HTTPS** with the certificate:
+
+   ```bash
+   caddy run --config Caddyfile
+   ```
+
+   ```
+   photos.yourdomain.com {
+       tls /etc/letsencrypt/live/photos.yourdomain.com/fullchain.pem \
+           /etc/letsencrypt/live/photos.yourdomain.com/privkey.pem
+       reverse_proxy 127.0.0.1:8000
+       request_body { max_size 600MB }
+       timeouts { read_body 30m }
+   }
+   ```
+
+   Set `BASE_URL=https://photos.yourdomain.com` and `TRUST_PROXY=true`.
+
+5. **Afterwards, change one DNS record.** Point the public record at your cloud
+   instance, sync the night's photos up, and every card you printed keeps
+   working.
+
+### What this gets you
+
+- A valid padlock, so **"Take a photo" works** — the single biggest guest-facing
+  difference.
+- Photos never leave the building; uploads run at full LAN speed regardless of
+  the venue's internet.
+- A memorable printed URL that survives the move to the cloud.
+- No client isolation, no captive portal, no arguing with venue IT.
+
+### What it does not solve
+
+**Coverage.** One router will not cover two buildings and a field, however good
+it is. You still need access points where the people are — see the kit list in
+Plan 4. Your router becomes the thing they all plug into.
+
+**The iOS connectivity check.** Give the router any internet uplink — a phone
+hotspot is enough — or phones will mark the network "No Internet" and drift back
+to cellular mid-upload. The photos still travel locally; the uplink exists to
+keep phones from leaving.
+
+**Certificate expiry.** Let's Encrypt certificates last 90 days. Issue or renew
+yours in the week before, not three months ahead.
+
+---
+
 ## Plan 5: the hedge
 
 If cell service is *marginal*, do both:
