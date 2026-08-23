@@ -280,10 +280,14 @@ async def _startup() -> None:
         ):
             await _queue.put(("transcribe", row["id"]))
 
+    mode = ("LIVE — this is the real album"
+            if settings.is_live else "TEST profile — rehearsal data")
     banner = [
         "",
         "  " + "=" * 62,
         f"   {settings.couple_names} — photo & video collection",
+        f"   {mode}",
+        f"   Album        : {settings.data_dir}",
         "  " + "=" * 62,
         f"   Guest upload : {settings.base_url}/",
         f"   Gallery      : {settings.base_url}/gallery",

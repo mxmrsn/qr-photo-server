@@ -1,5 +1,6 @@
 .venv/
 data/
+.env.wedding
 *.pyc
 __pycache__/
 .env

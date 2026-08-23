@@ -65,6 +65,14 @@ def main() -> int:
     print(f"\n  {settings.couple_names} — pre-flight check")
     print("  " + "─" * 56)
 
+    section("Which album")
+    if settings.is_live:
+        ok(f"profile '{settings.profile}'", "LIVE — the real event")
+    else:
+        warn(f"profile '{settings.profile}'", "rehearsal data, not the real album")
+        print(f"  {DIM}  switch with PROFILE=wedding, or cp .env.wedding .env{RESET}")
+    ok("album directory", str(settings.data_dir))
+
     # ---------------------------------------------------------- dependencies
     section("Dependencies")
     for module, why in [("fastapi", "web server"), ("PIL", "image processing"),
@@ -85,6 +93,36 @@ def main() -> int:
         ok("ffmpeg", "video uploads supported")
     else:
         bad("ffmpeg not found", "videos will be rejected — brew install ffmpeg")
+
+    # Captions need a model on disk. It downloads on first use, which is fine
+    # at home and useless at a venue with no internet — so check it is already
+    # cached rather than that the library imports.
+    if not settings.transcribe_video:
+        ok("video captions", "turned off")
+    else:
+        try:
+            import faster_whisper  # noqa: F401
+        except ImportError:
+            warn("faster-whisper missing", "videos will play silently with no captions")
+        else:
+            import os as _os
+            prior = _os.environ.get("HF_HUB_OFFLINE")
+            _os.environ["HF_HUB_OFFLINE"] = "1"
+            try:
+                from app import transcribe as _t
+                _t._model = None
+                _t._get_model()
+                ok(f"caption model '{settings.whisper_model}'",
+                   "cached — works with no internet")
+            except Exception:
+                bad(f"caption model '{settings.whisper_model}' is not downloaded",
+                    "run this once ONLINE: .venv/bin/python -c "
+                    "\"from app.transcribe import _get_model; _get_model()\"")
+            finally:
+                if prior is None:
+                    _os.environ.pop("HF_HUB_OFFLINE", None)
+                else:
+                    _os.environ["HF_HUB_OFFLINE"] = prior
 
     # --------------------------------------------------------------- storage
     section("Storage")

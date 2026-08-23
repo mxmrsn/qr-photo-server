@@ -44,6 +44,28 @@ cp .env.example .env
 Edit your names, the date, and — importantly — `BASE_URL`, which is what the QR
 codes point at. Every setting is documented in the file.
 
+### Rehearsal and the real thing
+
+`PROFILE` keeps the two apart. `PROFILE=test` (the default) stores everything in
+`data/test/`; `PROFILE=wedding` uses `data/wedding/`. They share no files, so
+practising cannot contaminate the real album and clearing one cannot touch the
+other. The startup banner says which is live:
+
+```
+   Max & Rachel — photo & video collection
+   TEST profile — rehearsal data
+   Album        : …/data/test
+```
+
+A ready-made `.env.wedding` is included. On the day:
+
+```bash
+cp .env.wedding .env
+```
+
+Check it with `tools/doctor.py`, which now says loudly if you are still pointed
+at the rehearsal album.
+
 ### Print the table cards
 
 ```bash

@@ -84,7 +84,17 @@ class Settings:
     port = _int("PORT", 8000)
 
     # --- Storage --------------------------------------------------------
-    data_dir = Path(_str("DATA_DIR", str(ROOT / "data")))
+    # PROFILE keeps rehearsal data and the real thing in separate albums:
+    # data/test/ and data/wedding/ never touch each other. On the day you want
+    # to be certain you are not writing into the practice run, and the startup
+    # banner says which one is live.
+    profile = _str("PROFILE", "test").strip() or "test"
+    data_dir = Path(_str("DATA_DIR", "") or str(ROOT / "data" / profile))
+
+    @property
+    def is_live(self) -> bool:
+        """Anything not obviously a rehearsal is treated as the real event."""
+        return self.profile.lower() not in {"test", "testing", "dev", "demo", "staging"}
 
     # --- Limits ---------------------------------------------------------
     max_file_mb = _int("MAX_FILE_MB", 512)
