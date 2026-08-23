@@ -224,6 +224,38 @@
     else schedule(4000);          // nothing yet; check back shortly
   }
 
+  /* Arrow keys browse in time order, not in shuffle order.
+
+     Unattended playback is deliberately shuffled, but the moment someone
+     reaches for an arrow key they are looking for a particular photo, and a
+     random jump is useless for that. Stepping also pauses the show — you are
+     driving now, and having it wander off mid-look is maddening. */
+
+  function chronological() {
+    return pool.slice().sort(function (a, b) { return a.seq - b.seq; });
+  }
+
+  function step(delta) {
+    clearTimeout(timer);
+    if (!paused) { paused = true; pausedEl.classList.add('on'); }
+    var vid = layers[front].querySelector('video');
+    if (vid) vid.pause();
+
+    var ordered = chronological();
+    if (!ordered.length) return;
+
+    var at = current ? ordered.findIndex(function (i) { return i.id === current.id; }) : -1;
+    var next = at < 0 ? (delta > 0 ? 0 : ordered.length - 1) : at + delta;
+    if (next < 0) next = ordered.length - 1;          // wrap
+    if (next >= ordered.length) next = 0;
+
+    paused = false;                 // let show() run its video/timers
+    show(ordered[next]);
+    clearTimeout(timer);            // ...but don't auto-advance off it
+    paused = true;
+    pausedEl.classList.add('on');
+  }
+
   function togglePause() {
     paused = !paused;
     pausedEl.classList.toggle('on', paused);
@@ -309,14 +341,8 @@
 
   document.addEventListener('keydown', function (e) {
     if (e.key === ' ') { e.preventDefault(); togglePause(); }
-    if (e.key === 'ArrowRight') { clearTimeout(timer); paused = false; pausedEl.classList.remove('on'); advance(); }
-    if (e.key === 'ArrowLeft') {
-      // Step back by re-showing a random earlier item; a true history stack
-      // isn't worth the complexity for a projector.
-      clearTimeout(timer);
-      var prev = pool[Math.floor(Math.random() * pool.length)];
-      if (prev) show(prev);
-    }
+    if (e.key === 'ArrowRight') step(1);
+    if (e.key === 'ArrowLeft') step(-1);
     if (e.key === 'c' || e.key === 'C') {
       showCaptions = !showCaptions;
       captionEl.classList.toggle('hide', !showCaptions);
