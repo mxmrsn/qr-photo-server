@@ -235,7 +235,7 @@ def render_card(
         url, qr_px, ink, logo,
         coverage=args.logo_coverage, min_modules=args.min_modules,
         detail=args.logo_detail, style=args.style, mono=args.mono,
-        accent=args.accent_rgb,
+        accent=args.accent_rgb, logo_weight=args.logo_weight,
     )
     render_card.last_note = qr_note
     card.paste(qr_img, (qr_x, y))
@@ -309,6 +309,9 @@ def main() -> int:
                          "hue is used; luminance is pinned to verified-scannable "
                          f"values. Defaults to QR_ACCENT ({settings.qr_accent or 'none'})")
     ap.add_argument("--no-accent", action="store_true", help="neutral grey logo")
+    ap.add_argument("--logo-weight", type=float, default=1.0,
+                    help="thicken the mark: 1.0 keeps its true proportions, "
+                         "higher suits fine line art (monogram ~1.8, posy ~2.2)")
     ap.add_argument("--mono", action="store_true",
                     help="black and white only; the logo is carried by dot size "
                          "alone. Scans with more margin, but strokes break up "

@@ -160,40 +160,22 @@ def _tone(level: int, ink: tuple[int, int, int]) -> tuple[int, int, int]:
     return tuple(round(c + (255 - c) * t) for c in ink)  # type: ignore[return-value]
 
 
-def _logo_mask(logo: Image.Image, n: int, coverage: float) -> list[list[bool]]:
+def _logo_mask(logo: Image.Image, n: int, coverage: float,
+               weight: float = 1.0) -> list[list[bool]]:
     """Reduce the logo to one true/false per QR module.
 
-    Averaging alpha down to ~45 squares and thresholding at 50% works for a
-    solid mark and destroys line art: a hairline stroke reduced 40x averages
-    to almost nothing and disappears entirely.
-
-    So the threshold is derived instead of fixed. We measure how much of the
-    artwork is actually ink at full resolution, then pick the cut that marks
-    that same fraction of modules. A solid logo and a single-line drawing both
-    come out with their true visual weight.
+    `weight` controls how generous the cut is: 1.0 keeps the mark's true
+    proportions, higher values thicken it. There is no single right value,
+    because it depends on the artwork's stroke width relative to a module —
+    a filled logo smears if you thicken it, and a fine drawing disappears if
+    you don't. So it's a knob per mark rather than a rule for all of them.
     """
     k = max(3, int(n * coverage))
     art = logo.copy()
-
-    full = art.split()[-1]
-    ink_fraction = sum(
-        count * (level / 255.0) for level, count in enumerate(full.histogram())
-    ) / max(1, full.width * full.height)
-    # Line art needs a nudge: strokes thinner than a module still deserve one.
-    target = min(0.55, max(0.04, ink_fraction * 1.9))
-
     art.thumbnail((k, k), Image.LANCZOS)          # box-averages the alpha
     alpha = art.split()[-1]
 
-    hist = alpha.histogram()
-    total = max(1, alpha.width * alpha.height)
-    cut, running = 255, 0
-    for level in range(255, -1, -1):              # walk down from opaque
-        running += hist[level]
-        if running / total >= target:
-            cut = level
-            break
-    cut = max(12, min(cut, 200))
+    cut = max(12, min(int(110 / max(0.2, weight)), 240))
 
     grid = [[False] * n for _ in range(n)]
     ox = (n - alpha.width) // 2
@@ -201,7 +183,7 @@ def _logo_mask(logo: Image.Image, n: int, coverage: float) -> list[list[bool]]:
     px = alpha.load()
     for y in range(alpha.height):
         for x in range(alpha.width):
-            if px[x, y] >= cut:
+            if px[x, y] > cut:
                 gx, gy = ox + x, oy + y
                 if 0 <= gx < n and 0 <= gy < n:
                     grid[gy][gx] = True
@@ -222,6 +204,7 @@ def render_qr(
     radii: dict | None = None,
     accent: tuple[int, int, int] | None = None,
     finder: str = "rounded",
+    logo_weight: float = 1.0,
 ) -> Image.Image:
     """Draw a QR as a field of dots, with rounded finder patterns.
 
@@ -271,7 +254,7 @@ def render_qr(
 
     matrix = qr.get_matrix()
     n = len(matrix)
-    mask = _logo_mask(logo, n, logo_coverage) if logo is not None else None
+    mask = _logo_mask(logo, n, logo_coverage, logo_weight) if logo is not None else None
 
     SS = 4                                   # supersample, for clean circle edges
     module = max(4, round(px / n))
@@ -405,7 +388,8 @@ def build_verified_qr(url: str, px: int, ink: tuple[int, int, int],
                       coverage: float = 0.95, min_modules: int = 57,
                       detail: int = 2, style: str = "dots",
                       mono: bool = False,
-                      accent: tuple[int, int, int] | None = None) -> tuple[Image.Image, str]:
+                      accent: tuple[int, int, int] | None = None,
+                      logo_weight: float = 1.0) -> tuple[Image.Image, str]:
     """Render the code, then prove it decodes before handing it back."""
     if logo is None:
         return render_qr(url, px, ink, style=style), "no logo"
@@ -416,7 +400,8 @@ def build_verified_qr(url: str, px: int, ink: tuple[int, int, int],
         for modules in [m for m in (57, 49, 45, 41, 37) if m <= min_modules] or [37]:
             img = render_qr(url, px, ink, logo=logo, logo_coverage=coverage,
                             min_modules=modules, style=style,
-                            tones=MONO_TONES, radii=MONO_RADII, accent=accent)
+                            tones=MONO_TONES, radii=MONO_RADII, accent=accent,
+                            logo_weight=logo_weight)
             note = f"logo in black and white, {modules}-module grid"
             verdict = scans_reliably(img, url)
             if verdict is None:
@@ -432,7 +417,7 @@ def build_verified_qr(url: str, px: int, ink: tuple[int, int, int],
         modules, override = attempt
         img = render_qr(url, px, ink, logo=logo, logo_coverage=coverage,
                         min_modules=modules, style=style, tones=override,
-                        accent=accent)
+                        accent=accent, logo_weight=logo_weight)
         note = f"logo shaded across the code, {modules}-module grid"
         if override:
             note += ", contrast eased"
