@@ -221,6 +221,7 @@ def render_qr(
     tones: dict | None = None,
     radii: dict | None = None,
     accent: tuple[int, int, int] | None = None,
+    finder: str = "rounded",
 ) -> Image.Image:
     """Draw a QR as a field of dots, with rounded finder patterns.
 
@@ -309,11 +310,16 @@ def render_qr(
             else:
                 colour = _tone(tone[key], ink)
             cx, cy = x * m + m / 2, y * m + m / 2
+            r = m * r_factor
             if style == "squares":
-                half = m * r_factor
-                d.rectangle([cx - half, cy - half, cx + half, cy + half], fill=colour)
+                d.rectangle([cx - r, cy - r, cx + r, cy + r], fill=colour)
+            elif style == "rounded":
+                d.rounded_rectangle([cx - r, cy - r, cx + r, cy + r],
+                                    radius=max(1, int(r * 0.42)), fill=colour)
+            elif style == "diamond":
+                d.polygon([(cx, cy - r * 1.28), (cx + r * 1.28, cy),
+                           (cx, cy + r * 1.28), (cx - r * 1.28, cy)], fill=colour)
             else:
-                r = m * r_factor
                 d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=colour)
 
     # Finder patterns: always full contrast, never tinted.
@@ -322,11 +328,18 @@ def render_qr(
     for ox, oy in ((0, 0), (n - 7, 0), (0, n - 7)):
         x0, y0 = ox * m, oy * m
         outer = 7 * m
-        d.rounded_rectangle([x0, y0, x0 + outer, y0 + outer], radius=int(m * 1.9), fill=solid)
-        d.rounded_rectangle([x0 + m, y0 + m, x0 + 6 * m, y0 + 6 * m],
-                            radius=int(m * 1.3), fill=paper)
-        d.rounded_rectangle([x0 + 2 * m, y0 + 2 * m, x0 + 5 * m, y0 + 5 * m],
-                            radius=int(m * 0.85), fill=solid)
+        rings = [
+            ([x0, y0, x0 + outer, y0 + outer], int(m * 1.9), solid),
+            ([x0 + m, y0 + m, x0 + 6 * m, y0 + 6 * m], int(m * 1.3), paper),
+            ([x0 + 2 * m, y0 + 2 * m, x0 + 5 * m, y0 + 5 * m], int(m * 0.85), solid),
+        ]
+        for box, radius, fill in rings:
+            if finder == "circle":
+                d.ellipse(box, fill=fill)
+            elif finder == "square":
+                d.rectangle(box, fill=fill)
+            else:                                  # rounded
+                d.rounded_rectangle(box, radius=radius, fill=fill)
 
     return canvas.resize((px, px), Image.LANCZOS)
 
