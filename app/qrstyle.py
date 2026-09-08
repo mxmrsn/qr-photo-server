@@ -44,16 +44,26 @@ def monochrome_logo(path: Path) -> Image.Image:
     bg = ring[len(ring) // 2]
 
     # Which way does the artwork sit relative to that background?
+    #
+    # The bands must not include the background itself. Clamping bg+25 to 255
+    # counts a pure-white background as "artwork lighter than background",
+    # which is nonsense — and then the span below collapses to 1 and every
+    # pixel clamps to zero alpha. That silently produced an empty mask for any
+    # black-on-white logo; only light-on-dark marks happened to work.
     hist = grey.histogram()
-    lighter = sum(hist[min(255, bg + 25):])
-    darker = sum(hist[:max(0, bg - 24)])
+    hi, lo = bg + 25, bg - 24
+    lighter = sum(hist[hi:]) if hi <= 255 else 0
+    darker = sum(hist[:lo]) if lo > 0 else 0
     artwork_is_lighter = lighter >= darker
 
+    # A degenerate span means the background sits hard against one end of the
+    # range; use the full range rather than dividing by ~1 and clipping away
+    # the entire mark.
     if artwork_is_lighter:
-        span = max(1, 255 - bg)
+        span = 255 - bg if (255 - bg) >= 16 else 255
         alpha = grey.point(lambda v: max(0, min(255, int((v - bg) * 255 / span))))
     else:
-        span = max(1, bg)
+        span = bg if bg >= 16 else 255
         alpha = grey.point(lambda v: max(0, min(255, int((bg - v) * 255 / span))))
 
     ink = Image.new("RGBA", src.size, (0, 0, 0, 0))
@@ -151,19 +161,47 @@ def _tone(level: int, ink: tuple[int, int, int]) -> tuple[int, int, int]:
 
 
 def _logo_mask(logo: Image.Image, n: int, coverage: float) -> list[list[bool]]:
-    """Reduce the logo to one true/false per QR module."""
+    """Reduce the logo to one true/false per QR module.
+
+    Averaging alpha down to ~45 squares and thresholding at 50% works for a
+    solid mark and destroys line art: a hairline stroke reduced 40x averages
+    to almost nothing and disappears entirely.
+
+    So the threshold is derived instead of fixed. We measure how much of the
+    artwork is actually ink at full resolution, then pick the cut that marks
+    that same fraction of modules. A solid logo and a single-line drawing both
+    come out with their true visual weight.
+    """
     k = max(3, int(n * coverage))
     art = logo.copy()
+
+    full = art.split()[-1]
+    ink_fraction = sum(
+        count * (level / 255.0) for level, count in enumerate(full.histogram())
+    ) / max(1, full.width * full.height)
+    # Line art needs a nudge: strokes thinner than a module still deserve one.
+    target = min(0.55, max(0.04, ink_fraction * 1.9))
+
     art.thumbnail((k, k), Image.LANCZOS)          # box-averages the alpha
     alpha = art.split()[-1]
 
+    hist = alpha.histogram()
+    total = max(1, alpha.width * alpha.height)
+    cut, running = 255, 0
+    for level in range(255, -1, -1):              # walk down from opaque
+        running += hist[level]
+        if running / total >= target:
+            cut = level
+            break
+    cut = max(12, min(cut, 200))
+
     grid = [[False] * n for _ in range(n)]
-    ox = (n - art.width) // 2
-    oy = (n - art.height) // 2
+    ox = (n - alpha.width) // 2
+    oy = (n - alpha.height) // 2
     px = alpha.load()
-    for y in range(art.height):
-        for x in range(art.width):
-            if px[x, y] > 110:
+    for y in range(alpha.height):
+        for x in range(alpha.width):
+            if px[x, y] >= cut:
                 gx, gy = ox + x, oy + y
                 if 0 <= gx < n and 0 <= gy < n:
                     grid[gy][gx] = True
