@@ -278,6 +278,13 @@ def render_card(
         draw_centred(d, H - bottom - line_height(f_tiny), settings.event_hashtag,
                      f_tiny, accent, W)
 
+    if not args.no_border:
+        inset = int(W * args.border_inset)
+        width = max(2, int(W * args.border_width))
+        colour = hex_to_rgb(args.border_color) if args.border_color else ink
+        d.rectangle([inset, inset, W - inset - 1, H - inset - 1],
+                    outline=colour + (255,), width=width)
+
     return card
 
 
@@ -347,6 +354,13 @@ def main() -> int:
                          "hue is used; luminance is pinned to verified-scannable "
                          f"values. Defaults to QR_ACCENT ({settings.qr_accent or 'none'})")
     ap.add_argument("--no-accent", action="store_true", help="neutral grey logo")
+    ap.add_argument("--no-border", action="store_true", help="omit the frame")
+    ap.add_argument("--border-inset", type=float, default=0.030,
+                    help="frame inset as a fraction of card width (default 0.030)")
+    ap.add_argument("--border-width", type=float, default=0.0022,
+                    help="frame line weight as a fraction of card width")
+    ap.add_argument("--border-color", default="",
+                    help="frame colour, e.g. '#8a6f4e'; defaults to the ink colour")
     ap.add_argument("--header-logo", default="",
                     help=f"artwork for the top of the card "
                          f"(default: {DEFAULT_HEADER.name} if present)")

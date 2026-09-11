@@ -5,9 +5,8 @@
     tools/make_test_signs.py --url http://192.168.0.10:8000   # a URL that's live now
 
 Produces, in qr_signs/:
-  card-<motif>.png    each card at 300 DPI
-  test-cards.pdf      one card per page, for a proper look
-  test-sheet.pdf      all five 2-up, to print on two sheets and scan quickly
+  card-<motif>.png    each card at 300 DPI, transparent background
+  test-sheet.pdf      two cards per Letter page, at table-card size
 """
 from __future__ import annotations
 
@@ -95,10 +94,8 @@ def main() -> int:
         return out
 
     pages = [flatten(Image.open(p)) for _, p in cards]
-    pdf = out / "test-cards.pdf"
-    pages[0].save(pdf, "PDF", resolution=DPI, save_all=True, append_images=pages[1:])
 
-    # Two per Letter page, with a cut line, for fast scan testing.
+    # Two per Letter page, at roughly 3.5 x 4.9in — table-card size.
     PW, PH = int(8.5 * DPI), int(11 * DPI)
     sheets: list[Image.Image] = []
     for i in range(0, len(pages), 2):
@@ -113,9 +110,10 @@ def main() -> int:
     sheet_pdf = out / "test-sheet.pdf"
     sheets[0].save(sheet_pdf, "PDF", resolution=DPI, save_all=True, append_images=sheets[1:])
 
+    w_in = sheets[0].width  # for the size note below
+    card_w = min(p.width for p in pages)
     print(f"\n{len(cards)} card(s) -> {out}/")
-    print(f"  {pdf}        one card per page")
-    print(f"  {sheet_pdf}        {len(sheets)} sheet(s), two cards each")
+    print(f"  {sheet_pdf}   {len(sheets)} sheet(s), two cards each")
     print(f"\nAll encode: {url.rstrip('/')}/")
     return 0
 
