@@ -33,6 +33,7 @@ from app.qrstyle import (
 )
 
 DPI = 300
+DEFAULT_HEADER = Path(__file__).resolve().parent.parent / "assets" / "monogram-rm.png"
 
 # Font candidates, best first. Falls back to PIL's bitmap font if none exist,
 # which is ugly but never crashes on a machine without these installed.
@@ -107,6 +108,13 @@ def wrap(draw, text, font, max_width) -> list[str]:
     return lines
 
 
+def tinted(art: Image.Image, colour: tuple[int, int, int]) -> Image.Image:
+    """Recolour a black-on-transparent mark, keeping its alpha."""
+    out = Image.new("RGBA", art.size, colour + (255,))
+    out.putalpha(art.split()[-1])
+    return out
+
+
 def render_card(
     label: str,
     url: str,
@@ -114,56 +122,71 @@ def render_card(
     size_in: tuple[float, float] = (5, 7),
     logo: Image.Image | None = None,
 ) -> Image.Image:
-    """Draw one table card.
+    """Draw one table card, on a transparent ground.
 
-    With Wi-Fi details supplied the card becomes two numbered steps, because on
-    a local-only setup a guest who scans without joining the network first gets
-    a browser error and gives up. Joining is genuinely step one, so it is
-    printed first and looks like an instruction rather than a footnote.
+    Transparent so the card can be printed on any paper colour. The only
+    opaque area is the panel behind the code, which stays white because a QR
+    needs its light modules light — on dark stock that panel is the difference
+    between scanning and not.
+
+    With Wi-Fi details supplied the card becomes two numbered steps: on a
+    local-only setup a guest who scans before joining gets a browser error and
+    gives up, so joining is genuinely step one and is printed that way.
     """
     W, H = int(size_in[0] * DPI), int(size_in[1] * DPI)
     ink = hex_to_rgb(settings.ink)
     accent = hex_to_rgb(settings.accent)
-    paper = hex_to_rgb(args.card_bg or settings.paper)
     wifi_mode = bool(args.wifi_ssid)
-    wifi_qr = wifi_mode and getattr(args, 'wifi_qr', False)
+    wifi_qr = wifi_mode and getattr(args, "wifi_qr", False)
 
-    card = Image.new("RGB", (W, H), paper)
+    if args.card_bg:
+        card = Image.new("RGBA", (W, H), hex_to_rgb(args.card_bg) + (255,))
+    else:
+        card = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(card)
 
-    f_names = load_font(SERIF_FONTS, int(W * (0.070 if wifi_mode else 0.098)))
     f_date = load_font(SERIF_FONTS, int(W * 0.034))
     f_step = load_font(SANS_FONTS, int(W * (0.032 if wifi_mode else 0.037)))
     f_ssid = load_font(SERIF_FONTS, int(W * 0.040))
     f_pass = load_font(SANS_FONTS, int(W * 0.028))
     f_label = load_font(SERIF_FONTS, int(W * 0.052))
-    f_url = load_font(SANS_FONTS, int(W * 0.028))
     f_tiny = load_font(SANS_FONTS, int(W * 0.023))
+    f_names = load_font(SERIF_FONTS, int(W * 0.070))
 
     margin = int(W * 0.085)
     inner = W - margin * 2
-    top = int(H * (0.040 if wifi_mode else 0.055))
-    bottom = int(H * (0.036 if wifi_mode else 0.048))
-    tight = 0.70 if wifi_mode else 1.0
+    top = int(H * 0.032)
+    bottom = int(H * 0.032)
+    tight = 0.58 if wifi_mode else 1.0
     gap_s = int(H * 0.010 * tight)
     gap_m = int(H * 0.018 * tight)
     gap_l = int(H * 0.027 * tight)
+    rule_len = inner * 0.11
+
+    # --- the header mark -------------------------------------------------
+    header = None
+    header_path = Path(args.header_logo) if args.header_logo else DEFAULT_HEADER
+    if not args.no_header_logo and header_path.exists():
+        try:
+            header = tinted(monochrome_logo(header_path), ink)
+            header.thumbnail((int(inner * 0.46), int(H * 0.092)), Image.LANCZOS)
+        except Exception:
+            header = None
 
     step_one = "1   Join the Wi-Fi" if wifi_mode else ""
     step_two = ("2   " + args.call_to_action) if wifi_mode else args.call_to_action
     two_lines = wrap(d, step_two, f_step, inner)
-    pretty_url = url.replace("https://", "").replace("http://", "").rstrip("/")
 
-    # --- measure -----------------------------------------------------
-    above = int(H * 0.006) + gap_m + line_height(f_names) + gap_s
+    # --- measure ---------------------------------------------------------
+    above = int(H * 0.006) + gap_m
+    above += (header.height if header else line_height(f_names)) + gap_s
     if settings.event_date:
         above += line_height(f_date) + gap_s
 
     wifi_px = 0
     if wifi_mode:
         wifi_px = int(inner * 0.22) if wifi_qr else 0
-        text_width = inner - wifi_px - (int(W * 0.038) if wifi_qr else 0)
-        one_lines = wrap(d, step_one, f_step, text_width)
+        one_lines = wrap(d, step_one, f_step, inner)
         above += gap_m + sum(line_height(f_step) for _ in one_lines)
         above += max(wifi_px, line_height(f_ssid) + line_height(f_pass)) + gap_m
         above += int(H * 0.004) + gap_m            # divider
@@ -173,7 +196,7 @@ def render_card(
     below = gap_l
     if label:
         below += line_height(f_label) + gap_s
-    below += line_height(f_url)
+    below += gap_m + int(H * 0.006)                # closing rule
     if settings.event_hashtag:
         below += gap_m + line_height(f_tiny)
 
@@ -182,40 +205,42 @@ def render_card(
     qr_px = int(min(inner * 0.92, room / (1 + 2 * pad_ratio)))
     if qr_px < inner * 0.44 and len(two_lines) > 1:
         two_lines = two_lines[:1]
-        above -= sum(line_height(f_step) for _ in range(1))
+        above -= line_height(f_step)
         room = H - top - bottom - above - below
         qr_px = int(min(inner * 0.92, room / (1 + 2 * pad_ratio)))
 
     block_h = above + int(qr_px * (1 + 2 * pad_ratio)) + below
     y = int(top + max(0, (H - top - bottom - block_h) // 2))
 
-    # --- draw --------------------------------------------------------
-    d.line([(W / 2 - inner * 0.11, y), (W / 2 + inner * 0.11, y)], fill=accent, width=3)
+    # --- draw ------------------------------------------------------------
+    d.line([(W / 2 - rule_len, y), (W / 2 + rule_len, y)], fill=accent, width=3)
     y += int(H * 0.006) + gap_m
-    y += draw_centred(d, y, settings.couple_names, f_names, ink, W) + gap_s
+
+    if header:
+        card.paste(header, ((W - header.width) // 2, y), header)
+        y += header.height + gap_s
+    else:
+        y += draw_centred(d, y, settings.couple_names, f_names, ink, W) + gap_s
+
     if settings.event_date:
         y += draw_centred(d, y, settings.event_date, f_date, accent, W) + gap_s
 
     if wifi_mode:
         y += gap_m
-        text_x = margin + wifi_px + (int(W * 0.038) if wifi_qr else 0)
         wifi_top = y
         for line in one_lines:
-            d.text((text_x, y), line, font=f_step, fill=ink)
-            y += line_height(f_step)
+            y += draw_centred(d, y, line, f_step, ink, W)
         y += int(H * 0.004)
-        d.text((text_x, y), args.wifi_ssid, font=f_ssid, fill=accent)
-        y += line_height(f_ssid)
+        y += draw_centred(d, y, args.wifi_ssid, f_ssid, accent, W)
         pass_line = (f"password  {args.wifi_password}" if args.wifi_password
                      else "no password needed")
-        d.text((text_x, y), pass_line, font=f_pass, fill=ink)
-        y += line_height(f_pass)
+        y += draw_centred(d, y, pass_line, f_pass, ink, W)
 
         if wifi_qr:
             wifi_img = render_qr(wifi_payload(args.wifi_ssid, args.wifi_password),
                                  wifi_px, ink, strong=False, style=args.style)
-            card.paste(wifi_img, (margin, wifi_top + int(H * 0.006)))
-            y = max(y, wifi_top + wifi_px + int(H * 0.006))
+            card.paste(wifi_img, ((W - wifi_px) // 2, y + gap_s))
+            y = max(y, y + gap_s + wifi_px)
         y += gap_m
 
         d.line([(margin, y), (W - margin, y)], fill=accent, width=2)
@@ -229,8 +254,9 @@ def render_card(
     pad = int(qr_px * pad_ratio)
     qr_x = (W - qr_px) // 2
     y += pad
+    # The one opaque area: a QR needs its light modules light.
     d.rounded_rectangle([qr_x - pad, y - pad, qr_x + qr_px + pad, y + qr_px + pad],
-                        radius=int(pad * 1.4), fill="white")
+                        radius=int(pad * 1.4), fill=(255, 255, 255, 255))
     qr_img, qr_note = build_verified_qr(
         url, qr_px, ink, logo,
         coverage=args.logo_coverage, min_modules=args.min_modules,
@@ -238,17 +264,29 @@ def render_card(
         accent=args.accent_rgb, logo_weight=args.logo_weight,
     )
     render_card.last_note = qr_note
-    card.paste(qr_img, (qr_x, y))
+    card.paste(qr_img.convert("RGBA"), (qr_x, y))
     y += qr_px + pad + gap_l
 
     if label:
         y += draw_centred(d, y, label, f_label, accent, W) + gap_s
-    y += draw_centred(d, y, pretty_url, f_url, ink, W)
+
+    # Closing rule, mirroring the one at the top.
+    y += gap_m
+    d.line([(W / 2 - rule_len, y), (W / 2 + rule_len, y)], fill=accent, width=3)
 
     if settings.event_hashtag:
-        draw_centred(d, H - bottom - line_height(f_tiny), settings.event_hashtag, f_tiny, accent, W)
+        draw_centred(d, H - bottom - line_height(f_tiny), settings.event_hashtag,
+                     f_tiny, accent, W)
 
     return card
+
+
+def flatten(im: Image.Image, bg=(255, 255, 255)) -> Image.Image:
+    if im.mode != "RGBA":
+        return im.convert("RGB")
+    out = Image.new("RGB", im.size, bg)
+    out.paste(im, mask=im.split()[-1])
+    return out
 
 
 def sheet_of(cards: list[Image.Image], per_row: int = 2, per_col: int = 2) -> list[Image.Image]:
@@ -258,7 +296,7 @@ def sheet_of(cards: list[Image.Image], per_row: int = 2, per_col: int = 2) -> li
     per_page = per_row * per_col
 
     for start in range(0, len(cards), per_page):
-        page = Image.new("RGB", (PW, PH), "white")
+        page = Image.new("RGBA", (PW, PH), (255, 255, 255, 0))
         d = ImageDraw.Draw(page)
         chunk = cards[start:start + per_page]
         cw, ch = PW // per_row, PH // per_col
@@ -268,7 +306,7 @@ def sheet_of(cards: list[Image.Image], per_row: int = 2, per_col: int = 2) -> li
             col, row = i % per_row, i // per_row
             x = col * cw + (cw - scaled.width) // 2
             y = row * ch + (ch - scaled.height) // 2
-            page.paste(scaled, (x, y))
+            page.paste(scaled, (x, y), scaled if scaled.mode == 'RGBA' else None)
             d.rectangle([x - 1, y - 1, x + scaled.width, y + scaled.height],
                         outline=(205, 205, 205), width=1)
         pages.append(page)
@@ -309,6 +347,11 @@ def main() -> int:
                          "hue is used; luminance is pinned to verified-scannable "
                          f"values. Defaults to QR_ACCENT ({settings.qr_accent or 'none'})")
     ap.add_argument("--no-accent", action="store_true", help="neutral grey logo")
+    ap.add_argument("--header-logo", default="",
+                    help=f"artwork for the top of the card "
+                         f"(default: {DEFAULT_HEADER.name} if present)")
+    ap.add_argument("--no-header-logo", action="store_true",
+                    help="print the couple's names as text instead")
     ap.add_argument("--logo-weight", type=float, default=1.0,
                     help="thicken the mark: 1.0 keeps its true proportions, "
                          "higher suits fine line art (monogram ~1.8, posy ~2.2)")
@@ -415,7 +458,11 @@ def main() -> int:
 
     pages = sheet_of(to_print) if args.layout == "sheet" else to_print
     pdf = out / ("table-cards-4up.pdf" if args.layout == "sheet" else "table-cards.pdf")
-    pages[0].save(pdf, "PDF", resolution=DPI, save_all=True, append_images=pages[1:])
+    # PDF has no alpha channel. Flattening onto white loses nothing in print —
+    # a printer lays down no ink there either, so coloured stock still shows
+    # through. The PNGs keep their transparency for digital use.
+    flat = [flatten(p) for p in pages]
+    flat[0].save(pdf, "PDF", resolution=DPI, save_all=True, append_images=flat[1:])
 
     print(f"\n{len(to_print)} card(s) to print -> {out}/")
     print(f"print this: {pdf}")
