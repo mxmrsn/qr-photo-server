@@ -85,8 +85,16 @@ def main() -> int:
         print("nothing generated")
         return 1
 
-    # One card per page.
-    pages = [Image.open(p).convert("RGB") for _, p in cards]
+    # One card per page. The cards are transparent, and RGBA -> RGB just drops
+    # the alpha channel and leaves the colour values behind — which are black.
+    # They have to be composited onto white instead.
+    def flatten(im: Image.Image, bg=(255, 255, 255)) -> Image.Image:
+        im = im.convert("RGBA")
+        out = Image.new("RGB", im.size, bg)
+        out.paste(im, mask=im.split()[-1])
+        return out
+
+    pages = [flatten(Image.open(p)) for _, p in cards]
     pdf = out / "test-cards.pdf"
     pages[0].save(pdf, "PDF", resolution=DPI, save_all=True, append_images=pages[1:])
 
@@ -96,7 +104,7 @@ def main() -> int:
     for i in range(0, len(pages), 2):
         sheet = Image.new("RGB", (PW, PH), "white")
         for slot, card in enumerate(pages[i:i + 2]):
-            c = card.copy()
+            c = card.copy()   # already flattened above
             c.thumbnail((PW - 240, PH // 2 - 200), Image.LANCZOS)
             x = (PW - c.width) // 2
             y = 90 + slot * (PH // 2)
