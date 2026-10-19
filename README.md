@@ -274,8 +274,9 @@ tools/
   sync.py       push one instance's collection to another
 data/           originals, derivatives, the database  (never committed)
 docs/
-  NETWORK.md    getting Wi-Fi right at the venue — read this one
-  DEPLOY.md     putting it on a server with HTTPS
+  NETWORK.md       getting Wi-Fi right at the venue — read this one
+  FIRST-DEPLOY.md  never hosted a website? start here — AWS, start to finish
+  DEPLOY.md        server options and reference config
 ```
 
 Uploads stream to disk in 1 MB chunks with the size cap enforced mid-stream, get

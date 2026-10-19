@@ -39,6 +39,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Generate one test card per motif.")
     ap.add_argument("--url", default="", help="override BASE_URL")
     ap.add_argument("--wifi-ssid", default="MaxAndRachel")
+    ap.add_argument("--no-wifi", action="store_true",
+                    help="cloud hosting: guests need no particular network, so "
+                         "drop the join-the-wifi step entirely")
     ap.add_argument("--wifi-password", default="")
     ap.add_argument("--out", default="qr_signs")
     args = ap.parse_args()
@@ -61,7 +64,7 @@ def main() -> int:
                "--url", url, "--logo", logo,
                "--logo-coverage", str(coverage), "--logo-weight", str(weight),
                "--min-modules", "49", "--out", str(tmp)]
-        if args.wifi_ssid:
+        if args.wifi_ssid and not args.no_wifi:
             cmd += ["--wifi-ssid", args.wifi_ssid]
         if args.wifi_password:
             cmd += ["--wifi-password", args.wifi_password]

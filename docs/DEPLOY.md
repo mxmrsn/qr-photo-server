@@ -122,6 +122,107 @@ to its own disk before forwarding, doubling the write and the wait.
 
 ---
 
+## Option A2: AWS Lightsail (recommended if you want AWS)
+
+Lightsail is AWS's fixed-price corner. One instance, one price, bandwidth
+included — which matters here, because metered egress is the only way this
+project can produce a surprising bill.
+
+**$12/month** for 2 GB RAM, 2 vCPU, 60 GB SSD and 3 TB transfer. For three
+months that is about **$36 total**.
+
+### Why not the other AWS services
+
+| Service | Verdict |
+| --- | --- |
+| **Lightsail** | Fixed price, bandwidth included, plain Ubuntu. Use this. |
+| EC2 + EBS | Works, but egress is metered and you assemble more pieces yourself. |
+| ECS Fargate + EFS | ~$30+/mo and more moving parts for no gain. |
+| App Runner | No persistent disk. Needs an S3 rewrite. |
+| Lambda + S3 + API Gateway | API Gateway caps payloads at 10 MB, so direct uploads break; ffmpeg needs layers; the caption model does not fit. Days of rework to save a few dollars a month. |
+
+This app keeps SQLite on local disk, shells out to `ffmpeg`, and loads a
+141 MB speech model. It wants a machine with a filesystem, not a function.
+
+### Sizing
+
+Measured from real phone uploads: about **2.7 MB per photo**, plus 27% for
+the thumbnail and display copies.
+
+| Guests x items | Storage |
+| --- | --- |
+| 150 x 15 | ~7.7 GB |
+| 150 x 25 | ~13 GB |
+| Heavy video | add 1-2 GB per long clip |
+
+The 60 GB plan is ample. Egress for ordinary browsing lands around 10-15 GB;
+even twenty people pulling the full archive stays inside the included 3 TB.
+
+### Build it
+
+```bash
+sudo apt update
+sudo apt install -y python3-venv python3-pip ffmpeg git caddy
+
+sudo useradd -r -m -d /srv/photos photos
+sudo -u photos git clone https://github.com/mxmrsn/qr-photo-server.git /srv/photos/app
+cd /srv/photos/app
+sudo -u photos python3 -m venv .venv
+sudo -u photos .venv/bin/pip install -r requirements.txt
+
+# Fetch the caption model now, while you definitely have internet.
+sudo -u photos .venv/bin/python -c \
+  "from app.transcribe import _get_model; _get_model()"
+```
+
+`.env`:
+
+```ini
+PROFILE=wedding
+BASE_URL=https://photos.yourdomain.com
+HOST=127.0.0.1
+PORT=8000
+TRUST_PROXY=true
+ADMIN_PASSWORD=<something long>
+```
+
+`HOST=127.0.0.1` keeps the app off the public interface — Caddy is the only
+thing that should reach it. `TRUST_PROXY=true` is correct *only* behind a
+proxy that sets `X-Forwarded-For`; exposed directly it would let anyone forge
+their address and walk around the rate limit.
+
+Then the systemd unit and Caddyfile from Option A above, with
+`request_body { max_size 600MB }` and a 30-minute read timeout so a phone on a
+slow uplink can finish a long video.
+
+### Open the firewall
+
+Lightsail has its **own firewall**, separate from the operating system's. A
+server that answers fine over SSH and times out in a browser is almost always
+this:
+
+**Networking -> IPv4 Firewall -> Add rule** — HTTP (80) and HTTPS (443).
+
+### Attach a static IP
+
+**Networking -> Create static IP -> attach to the instance.** Without it the
+address changes when the instance restarts, and your DNS record goes stale.
+
+Static IPs are free while attached and **billed while unattached** — so
+release it when you delete the instance, not before.
+
+### Shutting it down
+
+```bash
+tools/teardown.sh <your-server-ip>
+```
+
+Copies everything home, verifies file counts and opens the database to check
+it, then prints the console steps to delete the instance and release the IP.
+It deliberately does not delete anything itself.
+
+---
+
 ## Option B: Fly.io
 
 Cheap, and the free tier may cover you entirely.
