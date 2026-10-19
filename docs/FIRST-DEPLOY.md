@@ -177,7 +177,7 @@ HOST=127.0.0.1
 PORT=8000
 TRUST_PROXY=true
 QR_ACCENT=#9b8aa6
-MODERATION=slideshow
+MODERATION=off
 ADMIN_PASSWORD=pick-something-long-here
 ```
 
