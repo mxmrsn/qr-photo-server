@@ -90,12 +90,12 @@ sudo journalctl -u photos -f      # the admin password is printed here on first 
 photos.yourdomain.com {
     reverse_proxy 127.0.0.1:8000
 
-    # Phones on a slow uplink need a long time to push a 300 MB video.
+    # Caps oversized uploads at the proxy, just above the app's MAX_FILE_MB.
+    # No timeout directive here: Caddy v2 sets no read/write timeouts and no
+    # body limit by default, precisely so long streaming uploads work. The
+    # `timeouts` block is Caddy v1 syntax and will refuse to start v2.
     request_body {
         max_size 600MB
-    }
-    timeouts {
-        read_body 30m
     }
 }
 ```
@@ -195,8 +195,8 @@ proxy that sets `X-Forwarded-For`; exposed directly it would let anyone forge
 their address and walk around the rate limit.
 
 Then the systemd unit and Caddyfile from Option A above, with
-`request_body { max_size 600MB }` and a 30-minute read timeout so a phone on a
-slow uplink can finish a long video.
+`request_body { max_size 600MB }`. Do not add a `timeouts` block — that is
+Caddy v1 syntax and v2 refuses to start with it.
 
 ### Open the firewall
 

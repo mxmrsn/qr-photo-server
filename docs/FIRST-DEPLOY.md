@@ -245,8 +245,14 @@ Back in the Lightsail terminal:
 sudo tee /etc/caddy/Caddyfile > /dev/null <<'EOF'
 photos.yourdomain.com {
     reverse_proxy 127.0.0.1:8000
-    request_body { max_size 600MB }
-    timeouts { read_body 30m }
+
+    # Caps oversized uploads at the proxy, just above the app's MAX_FILE_MB.
+    # No timeout directive here: Caddy v2 sets no read/write timeouts and no
+    # body limit by default, precisely so long streaming uploads work. The
+    # `timeouts` block is Caddy v1 syntax and will refuse to start v2.
+    request_body {
+        max_size 600MB
+    }
 }
 EOF
 
@@ -327,6 +333,8 @@ It won't delete anything itself — that's deliberate.
 | Certificate error | DNS not pointing here yet, or orange cloud is on |
 | Large videos fail at ~100 MB | Cloudflare proxy is on — set the record to DNS only |
 | Large videos fail at ~1 MB | `request_body` missing from the Caddyfile |
+| `unrecognized directive: timeouts` | Caddy v1 syntax — v2 has no such directive, delete the block |
+| Caddy runs but only on :80 | Site block has no hostname — it's still the default `:80 { file_server }` |
 | Camera button missing | Not on HTTPS |
 | Video uploads rejected | `ffmpeg` not installed |
 | Captions never appear | Model not downloaded — rerun the `_get_model()` line |
