@@ -141,11 +141,22 @@ sudo apt update
 sudo apt install -y python3-venv python3-pip ffmpeg git caddy
 
 sudo useradd -r -m -d /srv/photos photos
+# useradd -m creates the home directory as mode 750, so your own login
+# cannot even cd into it. Without this the next commands silently run in
+# the wrong directory.
+sudo chmod 755 /srv/photos
+
 sudo -u photos git clone https://github.com/mxmrsn/qr-photo-server.git /srv/photos/app
-cd /srv/photos/app
-sudo -u photos python3 -m venv .venv
-sudo -u photos .venv/bin/pip install -r requirements.txt
-sudo -u photos .venv/bin/python -c "from app.transcribe import _get_model; _get_model()"
+sudo -u photos python3 -m venv /srv/photos/app/.venv
+sudo -u photos /srv/photos/app/.venv/bin/pip install --upgrade pip
+sudo -u photos /srv/photos/app/.venv/bin/pip install -r /srv/photos/app/requirements.txt
+
+# Absolute paths everywhere above, so there is no cd to go wrong. This one
+# needs the project root on sys.path, hence the subshell.
+sudo -u photos bash -c 'cd /srv/photos/app && \
+  .venv/bin/python -c "from app.transcribe import _get_model; _get_model()"'
+
+ls /srv/photos/app        # sanity check: should list app/ tools/ requirements.txt
 ```
 
 That last line downloads the speech model used for video captions. Doing it
@@ -309,6 +320,8 @@ It won't delete anything itself — that's deliberate.
 
 | Symptom | Cause |
 | --- | --- |
+| `cd: /srv/photos/app: Permission denied` | `useradd -m` made the home 750 — `sudo chmod 755 /srv/photos` |
+| `.venv` appeared in `/home/ubuntu` | Same cause: the `cd` failed and later commands ran in your own home |
 | Browser times out, SSH fine | Lightsail firewall — ports 80/443 not opened (step 4) |
 | "Connection refused" | App isn't running: `sudo systemctl status photos` |
 | Certificate error | DNS not pointing here yet, or orange cloud is on |

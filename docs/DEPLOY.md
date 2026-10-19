@@ -30,10 +30,10 @@ and as much disk as you can — **80 GB if you expect video**.
 ```bash
 sudo apt update && sudo apt install -y python3-venv ffmpeg git caddy
 sudo useradd -r -m -d /srv/photos photos
+sudo chmod 755 /srv/photos      # useradd -m makes it 750; your login needs to traverse it
 sudo -u photos git clone https://github.com/mxmrsn/qr-photo-server.git /srv/photos/app
-cd /srv/photos/app
-sudo -u photos python3 -m venv .venv
-sudo -u photos .venv/bin/pip install -r requirements.txt
+sudo -u photos python3 -m venv /srv/photos/app/.venv
+sudo -u photos /srv/photos/app/.venv/bin/pip install -r /srv/photos/app/requirements.txt
 ```
 
 ### 2. Configure
@@ -165,14 +165,17 @@ sudo apt update
 sudo apt install -y python3-venv python3-pip ffmpeg git caddy
 
 sudo useradd -r -m -d /srv/photos photos
+# useradd -m creates the home as mode 750, so your own login cannot cd into
+# it. Skip this and the following commands quietly run in the wrong place.
+sudo chmod 755 /srv/photos
+
 sudo -u photos git clone https://github.com/mxmrsn/qr-photo-server.git /srv/photos/app
-cd /srv/photos/app
-sudo -u photos python3 -m venv .venv
-sudo -u photos .venv/bin/pip install -r requirements.txt
+sudo -u photos python3 -m venv /srv/photos/app/.venv
+sudo -u photos /srv/photos/app/.venv/bin/pip install -r /srv/photos/app/requirements.txt
 
 # Fetch the caption model now, while you definitely have internet.
-sudo -u photos .venv/bin/python -c \
-  "from app.transcribe import _get_model; _get_model()"
+sudo -u photos bash -c 'cd /srv/photos/app && \
+  .venv/bin/python -c "from app.transcribe import _get_model; _get_model()"' 
 ```
 
 `.env`:
