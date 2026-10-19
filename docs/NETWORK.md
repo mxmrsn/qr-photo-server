@@ -399,7 +399,6 @@ own domain at the laptop fixes all three at once.
            /etc/letsencrypt/live/photos.yourdomain.com/privkey.pem
        reverse_proxy 127.0.0.1:8000
        request_body { max_size 600MB }
-       timeouts { read_body 30m }
    }
    ```
 

@@ -263,9 +263,11 @@ Caddy fetches a certificate automatically on the first request. That's why
 step 6 had to come first — the certificate authority checks that the domain
 really points here.
 
-`request_body` and `timeouts` are not optional: without them a phone uploading
-a long video on a slow connection gets cut off by the proxy before the app
-ever sees the file.
+`request_body` caps uploads at the proxy, just above the app's own
+`MAX_FILE_MB`, so an oversized file is refused cleanly instead of being
+streamed to disk first. Do not add a `timeouts` block: that is Caddy v1
+syntax, v2 refuses to start with it, and v2 already sets no read or write
+timeout so long uploads work by default.
 
 **HTTPS is what re-enables the "Take a photo" button.** iOS blocks camera
 access on plain HTTP, so this is a visible, guest-facing difference.
