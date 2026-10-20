@@ -285,6 +285,14 @@ def render_card(
         d.rectangle([inset, inset, W - inset - 1, H - inset - 1],
                     outline=colour + (255,), width=width)
 
+    # A blank strip below the frame, for a card holder to grip without
+    # covering anything. Added after layout so the design above is identical.
+    pad = int(DPI * max(0.0, args.bottom_pad))
+    if pad:
+        taller = Image.new("RGBA", (W, H + pad), (0, 0, 0, 0))
+        taller.paste(card, (0, 0))
+        return taller
+
     return card
 
 
@@ -354,6 +362,9 @@ def main() -> int:
                          "hue is used; luminance is pinned to verified-scannable "
                          f"values. Defaults to QR_ACCENT ({settings.qr_accent or 'none'})")
     ap.add_argument("--no-accent", action="store_true", help="neutral grey logo")
+    ap.add_argument("--bottom-pad", type=float, default=0.5,
+                    help="blank inches below the frame, for a card holder to "
+                         "grip (default 0.5; use 0 for none)")
     ap.add_argument("--no-border", action="store_true", help="omit the frame")
     ap.add_argument("--border-inset", type=float, default=0.030,
                     help="frame inset as a fraction of card width (default 0.030)")
