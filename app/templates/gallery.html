@@ -36,6 +36,9 @@
 {% endblock %}
 
 {% block scripts %}
-<script>window.GALLERY = { allowDownload: {{ 'true' if s.allow_guest_download else 'false' }} };</script>
+<script>window.GALLERY = {
+  allowDownload: {{ 'true' if s.allow_guest_download else 'false' }},
+  audio: {{ 'true' if s.gallery_audio else 'false' }}
+};</script>
 <script src="/static/js/gallery.js?v={{ v }}"></script>
 {% endblock %}

@@ -143,14 +143,32 @@
     lbStage.innerHTML = '';
     if (item.kind === 'video') {
       var video = document.createElement('video');
-      video.src = item.video;       // server-side copy with the audio removed
-      video.muted = true;
-      video.defaultMuted = true;
-      video.volume = 0;
-      video.controls = true;        // scrubbing is still useful; there's no sound to unmute
+      video.src = item.video;
+      video.controls = true;
       video.autoplay = true;
       video.playsInline = true;
+      if (!cfg.audio) {
+        // No audio track in the file at all; muting too is belt and braces.
+        video.muted = true;
+        video.defaultMuted = true;
+        video.volume = 0;
+      } else {
+        // Browsers block autoplay with sound, so start muted and let the
+        // viewer unmute with the controls — otherwise nothing plays at all.
+        video.muted = true;
+        video.setAttribute('data-has-audio', '1');
+      }
       lbStage.appendChild(video);
+      if (cfg.audio) {
+        var hint = document.createElement('div');
+        hint.className = 'unmute';
+        hint.textContent = 'Tap the speaker to hear sound';
+        lbStage.appendChild(hint);
+        video.addEventListener('volumechange', function () {
+          if (!video.muted) hint.remove();
+        });
+        setTimeout(function () { if (hint.parentNode) hint.remove(); }, 6000);
+      }
       attachCaptions(video, item.captions || []);
     } else {
       var img = document.createElement('img');

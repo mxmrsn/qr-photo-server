@@ -242,6 +242,12 @@ textarea { resize: vertical; min-height: 74px; }
   max-width: 100%; max-height: 82vh; border-radius: 6px; display: block;
   box-shadow: 0 30px 80px -20px rgba(0,0,0,.8);
 }
+.lightbox .unmute {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
+  background: rgba(0,0,0,.72); color: #fff; padding: 7px 15px;
+  border-radius: 999px; font-size: 13px; pointer-events: none;
+}
+
 /* Subtitles inside the lightbox, sitting over the bottom of the video. */
 .lightbox .lbsubs {
   position: absolute; left: 0; right: 0; bottom: 74px;

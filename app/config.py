@@ -118,6 +118,10 @@ class Settings:
     # machine is also the network's DNS — see docs/NETWORK.md.
     captive_portal = _bool("CAPTIVE_PORTAL", False)
     allow_guest_download = _bool("ALLOW_GUEST_DOWNLOAD", False)
+    # Play video with its original sound in the gallery. The projector always
+    # stays silent regardless — an unattended screen that can blast audio
+    # across a room is a different risk from someone pressing play on a phone.
+    gallery_audio = _bool("GALLERY_AUDIO", False)
     slideshow_seconds = _int("SLIDESHOW_SECONDS", 7)
 
     # Videos play muted on the projector, so their speech is transcribed

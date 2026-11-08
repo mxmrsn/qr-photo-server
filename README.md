@@ -227,6 +227,11 @@ Keys: `space` pause · `←` `→` step · `c` captions · `q` QR card · `f` fu
 
 ## Management
 
+Video plays muted by default, with the audio track stripped from the copy the
+browser receives — originals keep their sound. Set `GALLERY_AUDIO=true` to let
+the gallery play the original with audio; the projector is unaffected, because
+it asks for the silent copy by name.
+
 `/admin` gives you the whole collection with filters, bulk approve/hide/delete,
 retry for anything that failed to process, guest-note moderation, and a
 **Download all** button that streams every original out as one zip with a

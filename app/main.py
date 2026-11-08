@@ -529,7 +529,7 @@ def _public_fields(row) -> dict:
         "display": f"/m/{row['id']}/display.jpg",
         # Always the audio-stripped rendition. There is no code path that
         # serves a guest a video with sound in it.
-        "video": f"/m/{row['id']}/silent.mp4" if row["kind"] == "video" else None,
+        "video": f"/m/{row['id']}/play.mp4" if row["kind"] == "video" else None,
         "captions": (transcribe.from_json(row["transcript"])
                      if row["kind"] == "video" else None),
     }
@@ -588,6 +588,8 @@ async def api_slideshow(after: int = 0, before: int = 0, limit: int = 300):
         item["fresh"] = (now - (r["uploaded_at"] or 0)) < 180
         item["featured"] = bool(r["featured"])
         if r["kind"] == "video":
+            # The projector is never given the audio copy, whatever the setting.
+            item["video"] = f"/m/{r['id']}/silent.mp4"
             item["silent"] = media.silent_path(r["id"]).exists()
         items.append(item)
     head = db.query_one(f"SELECT MAX(seq) AS m FROM media WHERE {db.visible_clause('slideshow')}")
@@ -683,6 +685,28 @@ async def serve_silent(request: Request, media_id: str):
                             headers={"Cache-Control": "public, max-age=86400"})
     return FileResponse(path, media_type="video/mp4",
                         headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/m/{media_id}/play.mp4")
+async def serve_play(request: Request, media_id: str):
+    """What the gallery player is pointed at.
+
+    With GALLERY_AUDIO on this is the original, sound and all. Off, it is the
+    stripped copy. Either way the projector feed is unaffected: it asks for
+    /silent.mp4 by name.
+    """
+    row = _row_or_404(media_id)
+    _guard_visibility(request, row)
+    if row["kind"] != "video":
+        raise HTTPException(status_code=404, detail="Not a video")
+
+    if settings.gallery_audio:
+        path = settings.originals_dir / row["stored_name"]
+        if path.exists():
+            mime = row["mime"] or mimetypes.guess_type(row["stored_name"])[0] or "video/mp4"
+            return FileResponse(path, media_type=mime,
+                                headers={"Cache-Control": "public, max-age=86400"})
+    return await serve_silent(request, media_id)
 
 
 @app.get("/m/{media_id}/video")
